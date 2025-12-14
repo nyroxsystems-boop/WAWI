@@ -1,0 +1,24 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "DealerSuppliersResponse",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": ["supplier", "enabled", "priority", "is_default"],
+    "properties": {
+      "supplier": {
+        "type": "object",
+        "required": ["id", "name"],
+        "properties": {
+          "id": { "type": ["string", "integer"] },
+          "name": { "type": "string" },
+          "country": { "type": ["string", "null"] },
+          "actor_variant": { "type": ["string", "null"] }
+        }
+      },
+      "enabled": { "type": "boolean" },
+      "priority": { "type": "integer" },
+      "is_default": { "type": "boolean" }
+    }
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "DashboardOrdersList",
+  "type": "array",
+  "items": {
+    "$ref": "#/definitions/Order"
+  },
+  "definitions": {
+    "Order": {
+      "type": "object",
+      "required": ["id", "status"],
+      "properties": {
+        "id": { "type": ["string", "integer"] },
+        "status": { "type": "string" },
+        "language": { "type": ["string", "null"] },
+        "order_data": { "type": ["object", "null"] },
+        "vehicle_json": { "type": ["object", "null"] },
+        "part_json": { "type": ["object", "null"] },
+        "created_at": { "type": ["string", "null"], "format": "date-time" },
+        "updated_at": { "type": ["string", "null"], "format": "date-time" },
+        "createdAt": { "type": ["string", "null"], "format": "date-time" },
+        "updatedAt": { "type": ["string", "null"], "format": "date-time" },
+        "total_price": { "type": ["number", "null"] },
+        "totalPrice": { "type": ["number", "null"] }
+      }
+    }
+  }
+}

@@ -1,0 +1,34 @@
+# Generated manually for audit log
+from django.conf import settings
+from django.db import migrations, models
+import django.db.models.deletion
+import django.utils.timezone
+
+
+class Migration(migrations.Migration):
+
+    initial = True
+
+    dependencies = [
+        migrations.swappable_dependency(settings.AUTH_USER_MODEL),
+        ('tenancy', '0002_servicetoken'),
+    ]
+
+    operations = [
+        migrations.CreateModel(
+            name='AuditLog',
+            fields=[
+                ('id', models.AutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('action', models.CharField(max_length=100)),
+                ('metadata', models.JSONField(blank=True, default=dict)),
+                ('created_at', models.DateTimeField(db_index=True, default=django.utils.timezone.now)),
+                ('actor', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, to=settings.AUTH_USER_MODEL)),
+                ('tenant', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, related_name='audit_logs', to='tenancy.tenant')),
+            ],
+            options={
+                'ordering': ['-created_at'],
+                'verbose_name': 'Audit Log',
+                'verbose_name_plural': 'Audit Logs',
+            },
+        ),
+    ]

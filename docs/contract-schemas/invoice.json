@@ -1,0 +1,37 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Invoice",
+  "type": "object",
+  "required": ["id", "status", "total", "currency"],
+  "properties": {
+    "id": { "type": ["integer", "string"] },
+    "invoice_number": { "type": ["string", "null"] },
+    "status": { "type": "string" },
+    "order": { "type": ["integer", "string", "null"] },
+    "contact": { "type": ["integer", "string", "null"] },
+    "issue_date": { "type": ["string", "null"], "format": "date" },
+    "due_date": { "type": ["string", "null"], "format": "date" },
+    "subtotal": { "type": ["number", "string"] },
+    "tax_total": { "type": ["number", "string"] },
+    "total": { "type": ["number", "string"] },
+    "currency": { "type": "string" },
+    "billing_address_json": { "type": ["object", "null"] },
+    "shipping_address_json": { "type": ["object", "null"] },
+    "lines": {
+      "type": ["array", "null"],
+      "items": {
+        "type": "object",
+        "required": ["description", "quantity", "unit_price", "tax_rate"],
+        "properties": {
+          "id": { "type": ["integer", "string", "null"] },
+          "description": { "type": "string" },
+          "quantity": { "type": ["number", "string"] },
+          "unit_price": { "type": ["number", "string"] },
+          "tax_rate": { "type": ["number", "string"] },
+          "line_total": { "type": ["number", "string", "null"] }
+        }
+      }
+    },
+    "created_at": { "type": ["string", "null"], "format": "date-time" }
+  }
+}

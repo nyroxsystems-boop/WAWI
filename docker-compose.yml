@@ -1,0 +1,46 @@
+version: '3.9'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: inventree_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${INVENTREE_DB_NAME:-inventree}
+      POSTGRES_USER: ${INVENTREE_DB_USER:-inventree}
+      POSTGRES_PASSWORD: ${INVENTREE_DB_PASSWORD:-inventree}
+    ports:
+      - "${INVENTREE_DB_PORT:-5432}:5432"
+    volumes:
+      - inventree_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${INVENTREE_DB_USER:-inventree} -d ${INVENTREE_DB_NAME:-inventree}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    image: python:3.11-slim
+    container_name: inventree_backend
+    working_dir: /app
+    command: >
+      bash -c "pip install --no-cache-dir -r src/backend/requirements.txt &&
+      python src/backend/InvenTree/manage.py migrate &&
+      python src/backend/InvenTree/manage.py runserver 0.0.0.0:8000"
+    env_file: .env.local
+    volumes:
+      - ./:/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+
+  redis:
+    image: redis:7-alpine
+    container_name: inventree_redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+
+volumes:
+  inventree_db_data:

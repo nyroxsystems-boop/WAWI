@@ -1,0 +1,15 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "WwsConnection",
+  "type": "object",
+  "required": ["id", "name", "type", "baseUrl", "isActive"],
+  "properties": {
+    "id": { "type": ["string", "integer"] },
+    "name": { "type": "string" },
+    "type": { "type": "string", "enum": ["demo_wws", "http_api", "scraper"] },
+    "baseUrl": { "type": ["string", "null"], "format": "uri" },
+    "isActive": { "type": "boolean" },
+    "authConfig": { "type": ["object", "array", "null"] },
+    "config": { "type": ["object", "array", "null"] }
+  }
+}

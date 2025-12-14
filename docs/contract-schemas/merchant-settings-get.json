@@ -1,0 +1,25 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "MerchantSettingsResponse",
+  "type": "object",
+  "required": ["merchantId", "selectedShops", "marginPercent"],
+  "properties": {
+    "merchantId": { "type": "string" },
+    "selectedShops": { "type": "array", "items": { "type": "string" } },
+    "marginPercent": { "type": "number" },
+    "priceProfiles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "description", "margin"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "description": { "type": "string" },
+          "margin": { "type": "number" },
+          "isDefault": { "type": ["boolean", "null"] }
+        }
+      }
+    }
+  }
+}

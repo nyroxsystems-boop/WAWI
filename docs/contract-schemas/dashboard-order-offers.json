@@ -1,0 +1,31 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "DashboardOrderOffers",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": ["id", "orderId", "price", "currency", "status"],
+    "properties": {
+      "id": { "type": ["string", "integer"] },
+      "orderId": { "type": ["string", "integer"] },
+      "supplier": { "type": ["string", "integer", "null"] },
+      "supplierName": { "type": ["string", "null"] },
+      "shopName": { "type": ["string", "null"] },
+      "product_name": { "type": ["string", "null"] },
+      "productName": { "type": ["string", "null"] },
+      "productUrl": { "type": ["string", "null"] },
+      "oemNumber": { "type": ["string", "null"] },
+      "price": { "type": ["number", "string"] },
+      "basePrice": { "type": ["number", "string", "null"] },
+      "finalPrice": { "type": ["number", "string", "null"] },
+      "currency": { "type": ["string", "null"] },
+      "availability": { "type": ["string", "null"] },
+      "deliveryTimeDays": { "type": ["integer", "null"] },
+      "status": { "type": "string" },
+      "tier": { "type": ["string", "null"] },
+      "marginPercent": { "type": ["number", "null"] },
+      "rating": { "type": ["number", "null"] },
+      "isRecommended": { "type": ["boolean", "null"] }
+    }
+  }
+}

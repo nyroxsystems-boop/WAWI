@@ -1,0 +1,36 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Django
+media/
+static/
+*.sqlite3
+
+# Env / Secrets
+.env
+.env.*
+*.secret
+
+# Node (falls irgendwo genutzt)
+node_modules/
+dist/
+
+# OS
+.DS_Store
+
+# Tests / Coverage
+.coverage
+htmlcov/
+coverage/
+
+# Temp / Build
+tmp/
+build/
+
+# Archives / Backups
+*.zip
+Backup/
