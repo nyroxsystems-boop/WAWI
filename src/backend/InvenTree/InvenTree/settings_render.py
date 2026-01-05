@@ -9,11 +9,17 @@ print("--- LOADING RENDER SETTINGS ---")
 if 'DATABASE_URL' in os.environ:
     print(f"Configuring Database from DATABASE_URL: {os.environ['DATABASE_URL'].split('@')[-1]}") # Log safe part
     DATABASES['default'] = dj_database_url.config(
-        conn_max_age=600,
-        ssl_require='render' in os.environ.get('RENDER_EXTERNAL_HOSTNAME', '') # SSL usually required on Render
+        conn_max_age=600
     )
     # Use standard PostgreSQL backend (django-tenants removed)
     DATABASES['default']['ENGINE'] = 'django.db.backends.postgresql'
+    
+    # Add SSL options explicitly
+    DATABASES['default']['OPTIONS'] = {
+        'sslmode': 'require',
+        'connect_timeout': 30,
+    }
+    
     print(f"DATABASE ENGINE: {DATABASES['default']['ENGINE']}")
 else:
     print("WARNING: No DATABASE_URL found. Using default settings from settings.py")
