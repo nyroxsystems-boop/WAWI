@@ -1,0 +1,2 @@
+import{bY as a,r as s,ab as e,j as i}from"./index-Db7AGPIq.js";import{E as u}from"./GenericErrorPage-D-1fKCA7.js";import{az as f}from"./ThemeContext-CxdCkKtz.js";function m(t){a(()=>{typeof t=="string"&&t.trim().length>0&&(document.title=t.trim())},[t])}function E(){const t=f(),[r,o]=s.useState(e._({id:"SlfejT"}));return m(r),s.useEffect(()=>{t?.statusText&&o(e._({id:"TpqeIh",values:{0:t.statusText}}))},[t]),i.jsx(u,{title:r,message:e._({id:"MVDSZK"})})}export{E as default};
+//# sourceMappingURL=ErrorPage-CG17OpH9.js.map

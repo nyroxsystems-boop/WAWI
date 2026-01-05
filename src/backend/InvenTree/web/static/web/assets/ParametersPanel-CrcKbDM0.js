@@ -1,0 +1,2 @@
+import{j as a,ab as s,b4 as o}from"./index-Db7AGPIq.js";import{P as n}from"./ParameterTable-CGnscd1r.js";import{V as m}from"./ThemeContext-CxdCkKtz.js";function x({model_type:e,model_id:r,allowEdit:t=!0}){return{name:"parameters",label:s._({id:"F18WP3"}),icon:a.jsx(m,{}),content:e&&r?a.jsx(n,{allowEdit:t,modelType:e,modelId:r}):a.jsx(o,{})}}export{x as P};
+//# sourceMappingURL=ParametersPanel-CrcKbDM0.js.map

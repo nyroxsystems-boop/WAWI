@@ -1,0 +1,196 @@
+{% load static %}
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>WAWI Test Dashboard</title>
+  <style>
+    body { background: #0f172a; color: #e2e8f0; font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif; margin: 0; padding: 24px; }
+    a { color: #38bdf8; text-decoration: none; }
+    h1, h2 { margin: 0 0 12px; }
+    .card { background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 16px; margin-bottom: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.25); }
+    .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+    table { width: 100%; border-collapse: collapse; color: #e2e8f0; font-size: 14px; }
+    th, td { padding: 8px 10px; border-bottom: 1px solid #1f2937; text-align: left; }
+    th { text-transform: uppercase; letter-spacing: 0.5px; font-size: 12px; color: #94a3b8; }
+    .badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; }
+    .badge-success { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(52, 211, 153, 0.3); }
+    .badge-warn { background: rgba(251, 191, 36, 0.12); color: #facc15; border: 1px solid rgba(250, 204, 21, 0.25); }
+    .badge-danger { background: rgba(248, 113, 113, 0.15); color: #f87171; border: 1px solid rgba(248, 113, 113, 0.3); }
+    .badge-neutral { background: rgba(148, 163, 184, 0.15); color: #cbd5e1; border: 1px solid rgba(148, 163, 184, 0.3); }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .btn { border: 1px solid #1f2937; background: #1e293b; color: #e2e8f0; padding: 8px 12px; border-radius: 10px; cursor: pointer; font-weight: 700; }
+    .btn-primary { background: linear-gradient(120deg, #22c55e, #0ea5e9); border: none; color: #0b1220; }
+    .btn-ghost { background: transparent; border-color: #334155; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .muted { color: #94a3b8; font-size: 13px; }
+    form.inline { display: inline; }
+    .error { color: #f87171; font-size: 13px; }
+    .messages { margin-bottom: 12px; }
+    .msg { padding: 10px 12px; border-radius: 10px; margin-bottom: 6px; }
+    .msg-success { background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.4); color: #bbf7d0; }
+    .msg-error { background: rgba(248,113,113,0.1); border: 1px solid rgba(248,113,113,0.3); color: #fecdd3; }
+    .msg-info { background: rgba(59,130,246,0.1); border: 1px solid rgba(59,130,246,0.3); color: #bfdbfe; }
+    details summary { cursor: pointer; color: #f87171; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>WAWI Test Dashboard</h1>
+    <div class="muted">Tenant: <strong>{{ tenant.slug }}</strong> — Role: <strong>{{ role_alias }}</strong></div>
+  </div>
+
+  <div class="messages">
+    {% for message in messages %}
+      <div class="msg {% if message.tags %}msg-{{ message.tags }}{% endif %}">{{ message }}</div>
+    {% endfor %}
+  </div>
+
+  {% if can_manage %}
+  <div class="card">
+    <h2>Beleg erstellen (Queue)</h2>
+    <form method="post" action="{% url 'wawitest:create' %}">
+      {% csrf_token %}
+      <div class="grid">
+        <label>
+          <div class="muted">Order ID</div>
+          <input required name="order_id" placeholder="order-123" style="width:100%; padding:8px; border-radius:8px; border:1px solid #1f2937; background:#0b1220; color:#e2e8f0;">
+        </label>
+        <label>
+          <div class="muted">Doc Type</div>
+          <select name="doc_type" style="width:100%; padding:8px; border-radius:8px; border:1px solid #1f2937; background:#0b1220; color:#e2e8f0;">
+            <option value="invoice">invoice</option>
+            <option value="delivery_note">delivery_note</option>
+            <option value="offer">offer</option>
+            <option value="credit_note">credit_note</option>
+          </select>
+        </label>
+        <label>
+          <div class="muted">Version</div>
+          <input name="version" type="number" value="1" min="1" style="width:100%; padding:8px; border-radius:8px; border:1px solid #1f2937; background:#0b1220; color:#e2e8f0;">
+        </label>
+      </div>
+      <div style="margin-top:12px;">
+        <button class="btn btn-primary" type="submit" data-disable-on-submit>Beleg erstellen (queue)</button>
+        <form class="inline" method="post" action="{% url 'wawitest:run_one' %}">
+          {% csrf_token %}
+          <button class="btn btn-ghost" type="submit" data-disable-on-submit>Run 1 queued job (simulate)</button>
+        </form>
+      </div>
+    </form>
+  </div>
+  {% endif %}
+
+  <div class="card">
+    <h2>Documents</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Order</th>
+          <th>Type</th>
+          <th>Version</th>
+          <th>Status</th>
+          <th>Created</th>
+          <th>Last attempt</th>
+          <th>Error</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for d in documents %}
+          <tr>
+            <td>{{ d.id }}</td>
+            <td>{{ d.order_id }}</td>
+            <td>{{ d.doc_type }}</td>
+            <td>{{ d.version }}</td>
+            <td>
+              {% if d.status == 'ready' %}<span class="badge badge-success">ready</span>{% endif %}
+              {% if d.status == 'creating' %}<span class="badge badge-warn">creating</span>{% endif %}
+              {% if d.status == 'failed' %}<span class="badge badge-danger">failed</span>{% endif %}
+            </td>
+            <td class="muted">
+              {{ d.created_at }}<br/>
+              {% if d.created_by_user_id %}<span style="font-size:12px;">by #{{ d.created_by_user_id }}</span>{% endif %}
+            </td>
+            <td class="muted">{{ d.last_attempt_at|default:"-" }}</td>
+            <td class="muted">
+              {% if d.last_error %}
+                <details>
+                  <summary>{{ d.last_error|slice:":200" }}{% if d.last_error|length > 200 %}…{% endif %}</summary>
+                  <div>{{ d.last_error }}</div>
+                </details>
+              {% endif %}
+            </td>
+            <td>
+              {% if can_manage %}
+              <div class="actions">
+                <form class="inline" method="post" action="{% url 'wawitest:retry' d.id %}">{% csrf_token %}<button class="btn btn-ghost" type="submit" data-disable-on-submit>Retry</button></form>
+                <form class="inline" method="post" action="{% url 'wawitest:fail' d.id %}">{% csrf_token %}<button class="btn btn-ghost" type="submit" data-disable-on-submit>Force FAIL</button></form>
+              </div>
+              {% endif %}
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="7" class="muted">Keine Dokumente</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>Jobs</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Document</th>
+          <th>Status</th>
+          <th>Retry</th>
+          <th>Started</th>
+          <th>Finished</th>
+          <th>Error</th>
+          <th>Created</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for j in jobs %}
+          <tr>
+            <td>{{ j.id }}</td>
+            <td>{{ j.document_id }}</td>
+            <td>
+              {% if j.status == 'done' %}<span class="badge badge-success">done</span>{% endif %}
+              {% if j.status == 'queued' %}<span class="badge badge-warn">queued</span>{% endif %}
+              {% if j.status == 'running' %}<span class="badge badge-warn">running</span>{% endif %}
+              {% if j.status == 'failed' %}<span class="badge badge-danger">failed</span>{% endif %}
+            </td>
+            <td>{{ j.retry_count }} / {{ j.max_retries }}</td>
+            <td class="muted">{{ j.started_at|default:"-" }}</td>
+            <td class="muted">{{ j.finished_at|default:"-" }}</td>
+            <td class="muted">
+              {% if j.last_error %}
+                <details>
+                  <summary>{{ j.last_error|slice:":200" }}{% if j.last_error|length > 200 %}…{% endif %}</summary>
+                  <div>{{ j.last_error }}</div>
+                </details>
+              {% endif %}
+            </td>
+            <td class="muted">{{ j.created_at }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6" class="muted">Keine Jobs</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <script>
+    document.querySelectorAll('form').forEach((form) => {
+      form.addEventListener('submit', () => {
+        form.querySelectorAll('[data-disable-on-submit]').forEach((btn) => {
+          btn.disabled = true;
+        });
+      });
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+
+# Secrets
+.env
+inventree.env
+config/oidc.pem
+secret_key.txt
+.venv/
+data/
+*.log
+__pycache__/
+*.pyc
+.DS_Store
