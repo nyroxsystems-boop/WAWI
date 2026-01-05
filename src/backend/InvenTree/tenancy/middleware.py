@@ -24,12 +24,13 @@ class SubdomainTenantMiddleware(MiddlewareMixin):
         host = (request.get_host() or '').split(':')[0]
         parts = host.split('.')
 
-        # Not enough parts to contain a subdomain => no tenant context
-        if len(parts) < 3:
+        # Bypass tenancy for Render deployment (wawi-new.onrender.com)
+        # or any non-subdomain host (e.g., localhost, single-domain deployments)
+        if len(parts) < 3 or host.endswith('.onrender.com'):
             request.tenant = None
             request.tenant_id = None
             request.tenant_user = None
-            logger.debug('tenant.resolve', extra={'host': host, 'slug': None, 'tenant': None})
+            logger.debug('tenant.resolve.bypass', extra={'host': host, 'reason': 'non-subdomain or render deployment'})
             return None
 
         # Allow selected public endpoints without tenant lookup
@@ -51,7 +52,12 @@ class SubdomainTenantMiddleware(MiddlewareMixin):
         slug = parts[0].lower()
         tenant = Tenant.objects.filter(slug=slug, status='active', is_active=True).first()
         if not tenant:
-            raise Http404('Tenant not found')
+            # Don't raise 404 - just set tenant to None and let the app handle it
+            request.tenant = None
+            request.tenant_id = None
+            request.tenant_user = None
+            logger.warning('tenant.not_found', extra={'host': host, 'slug': slug})
+            return None
 
         request.tenant = tenant
         request.tenant_id = tenant.id
