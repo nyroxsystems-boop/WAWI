@@ -4,23 +4,50 @@ from .settings import *  # noqa
 
 print("--- LOADING RENDER SETTINGS ---")
 
+# Insert DB health middleware BEFORE tenancy middleware
+if 'tenancy.middleware.SubdomainTenantMiddleware' in MIDDLEWARE:
+    MIDDLEWARE.insert(
+        MIDDLEWARE.index('tenancy.middleware.SubdomainTenantMiddleware'),
+        'tenancy.db_middleware.DatabaseHealthMiddleware'
+    )
+
 # Database configuration for Render
 # Render provides DATABASE_URL for managed PostgreSQL
 if 'DATABASE_URL' in os.environ:
     print(f"Configuring Database from DATABASE_URL: {os.environ['DATABASE_URL'].split('@')[-1]}") # Log safe part
+    
     DATABASES['default'] = dj_database_url.config(
-        conn_max_age=600
+        conn_max_age=0  # Disable pooling - fresh connection per request to avoid stale SSL connections
     )
+    
     # Use standard PostgreSQL backend (django-tenants removed)
     DATABASES['default']['ENGINE'] = 'django.db.backends.postgresql'
     
-    # Add SSL options explicitly
+    # SSL + Keepalives (keepalives help even without pooling, for long queries)
     DATABASES['default']['OPTIONS'] = {
         'sslmode': 'require',
         'connect_timeout': 30,
+        'keepalives': 1,
+        'keepalives_idle': 30,
+        'keepalives_interval': 10,
+        'keepalives_count': 5,
     }
     
-    print(f"DATABASE ENGINE: {DATABASES['default']['ENGINE']}")
+    # Log configuration for debugging
+    _db = DATABASES['default']
+    _opts = _db.get('OPTIONS', {})
+    print(f"""
+=== DATABASE CONFIGURATION ===
+Engine: {_db.get('ENGINE')}
+Host: {_db.get('HOST', 'N/A')}
+Port: {_db.get('PORT', 'N/A')}
+Database: {_db.get('NAME')}
+SSL Mode: {_opts.get('sslmode')}
+Connection Timeout: {_opts.get('connect_timeout')}s
+Connection Max Age: {_db.get('CONN_MAX_AGE', 0)}s (0 = no pooling)
+TCP Keepalives: enabled={_opts.get('keepalives')}, idle={_opts.get('keepalives_idle')}s, interval={_opts.get('keepalives_interval')}s, count={_opts.get('keepalives_count')}
+==============================
+""")
 else:
     print("WARNING: No DATABASE_URL found. Using default settings from settings.py")
 
