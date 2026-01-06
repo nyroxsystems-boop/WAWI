@@ -52,6 +52,15 @@ else:
     print("WARNING: No DATABASE_URL found. Using default settings from settings.py")
 
 
+# Override REST_FRAMEWORK permissions for Render deployment
+# Allow API Token authentication (not just Service Tokens)
+REST_FRAMEWORK['DEFAULT_PERMISSION_CLASSES'] = [
+    'rest_framework.permissions.IsAuthenticatedOrReadOnly',  # Allow read for authenticated users
+]
+
+print(f"REST_FRAMEWORK PERMISSIONS: {REST_FRAMEWORK['DEFAULT_PERMISSION_CLASSES']}")
+
+
 def _env_bool(name: str, default: bool = False) -> bool:
     """Parse boolean-ish env vars safely."""
     raw = os.environ.get(name)
