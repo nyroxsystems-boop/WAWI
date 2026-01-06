@@ -55,10 +55,9 @@ else:
 # Override REST_FRAMEWORK settings for Render deployment
 # Ensure API Token authentication works for Bot-Service
 REST_FRAMEWORK['DEFAULT_AUTHENTICATION_CLASSES'] = [
-    'rest_framework.authentication.TokenAuthentication',  # Standard DRF Token Auth
+    'users.authentication.ApiTokenAuthentication',  # Custom ApiToken authentication (uses ApiToken model)
     'tenancy.authentication.ServiceTokenAuthentication',
     'tenancy.authentication.TenantJWTAuthentication',
-    'users.authentication.ApiTokenAuthentication',
     'rest_framework.authentication.BasicAuthentication',
     'rest_framework.authentication.SessionAuthentication',
 ]
