@@ -107,8 +107,8 @@ class TenantScopedModel(models.Model):
             tenant = get_current_tenant()
             if tenant is not None:
                 self.tenant = tenant
-            else:
-                raise ValidationError({'tenant': _('Tenant must be set')})
+            # Allow tenant to be None if no current tenant exists
+            # This enables creation of tenant-less companies for initial setup
 
     def save(self, *args, **kwargs):
         """Ensure tenant is set before saving."""
