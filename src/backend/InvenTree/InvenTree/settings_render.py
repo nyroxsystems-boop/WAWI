@@ -52,13 +52,25 @@ else:
     print("WARNING: No DATABASE_URL found. Using default settings from settings.py")
 
 
-# Override REST_FRAMEWORK permissions for Render deployment
-# Allow API Token authentication (not just Service Tokens)
-REST_FRAMEWORK['DEFAULT_PERMISSION_CLASSES'] = [
-    'rest_framework.permissions.IsAuthenticatedOrReadOnly',  # Allow read for authenticated users
+# Override REST_FRAMEWORK settings for Render deployment
+# Ensure API Token authentication works for Bot-Service
+REST_FRAMEWORK['DEFAULT_AUTHENTICATION_CLASSES'] = [
+    'rest_framework.authentication.TokenAuthentication',  # Standard DRF Token Auth
+    'tenancy.authentication.ServiceTokenAuthentication',
+    'tenancy.authentication.TenantJWTAuthentication',
+    'users.authentication.ApiTokenAuthentication',
+    'rest_framework.authentication.BasicAuthentication',
+    'rest_framework.authentication.SessionAuthentication',
 ]
 
+# Keep permissions strict but allow authenticated API access
+REST_FRAMEWORK['DEFAULT_PERMISSION_CLASSES'] = [
+    'rest_framework.permissions.IsAuthenticated',  # Require authentication
+]
+
+print(f"REST_FRAMEWORK AUTH CLASSES: {REST_FRAMEWORK['DEFAULT_AUTHENTICATION_CLASSES']}")
 print(f"REST_FRAMEWORK PERMISSIONS: {REST_FRAMEWORK['DEFAULT_PERMISSION_CLASSES']}")
+
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
