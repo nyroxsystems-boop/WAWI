@@ -28,6 +28,7 @@ class BillingSettings(TenantScopedModel):
     address_layout = models.CharField(max_length=20, default='two-column')
     table_style = models.CharField(max_length=20, default='grid')
     accent_color = models.CharField(max_length=20, default='#f3f4f6')
+    logo_base64 = models.TextField(blank=True, default='')
 
     class Meta:
         """Meta."""

@@ -144,7 +144,9 @@ class BillingSettingsViewSet(viewsets.ViewSet):
             'address_layout': settings_obj.address_layout,
             'table_style': settings_obj.table_style,
             'accent_color': settings_obj.accent_color,
+            'logo_base64': settings_obj.logo_base64,
         })
+
 
     def update(self, request, pk=None):
         tenant = getattr(request, 'tenant', None)
@@ -173,6 +175,7 @@ class BillingSettingsViewSet(viewsets.ViewSet):
             'address_layout',
             'table_style',
             'accent_color',
+            'logo_base64',
         ]:
             if field in request.data:
                 setattr(settings_obj, field, request.data[field])
@@ -180,6 +183,7 @@ class BillingSettingsViewSet(viewsets.ViewSet):
         from audit.utils import log_audit
         log_audit('BILLING_SETTINGS_UPDATED', tenant=tenant, actor=getattr(request, 'user', None))
         return Response({'detail': 'updated'})
+
 
 
 class InvoiceExportView(viewsets.ViewSet):
