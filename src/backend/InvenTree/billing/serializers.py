@@ -26,6 +26,11 @@ class InvoiceSerializer(serializers.ModelSerializer):
     lines = InvoiceLineSerializer(many=True, required=False)
     createdAt = serializers.DateTimeField(source='created_at', read_only=True)
     updatedAt = serializers.DateTimeField(source='updated_at', read_only=True)
+    
+    # Optional simplified fields for easier invoice creation from frontend
+    customer_name = serializers.CharField(required=False, write_only=True)
+    billing_country = serializers.CharField(required=False, write_only=True)
+    notes = serializers.CharField(required=False, write_only=True, allow_blank=True)
 
     class Meta:
         model = Invoice
@@ -49,6 +54,9 @@ class InvoiceSerializer(serializers.ModelSerializer):
             'updated_at',
             'createdAt',
             'updatedAt',
+            'customer_name',
+            'billing_country',
+            'notes',
         ]
         read_only_fields = [
             'id',
@@ -66,6 +74,27 @@ class InvoiceSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         """Handle nested lines and tenant."""
         lines_data = validated_data.pop('lines', [])
+        
+        # Transform simplified fields into billing_address_json
+        customer_name = validated_data.pop('customer_name', None)
+        billing_country = validated_data.pop('billing_country', None)
+        notes = validated_data.pop('notes', None)
+        
+        if customer_name or billing_country:
+            # Only override if not already provided
+            if 'billing_address_json' not in validated_data or not validated_data['billing_address_json']:
+                validated_data['billing_address_json'] = {}
+                if customer_name:
+                    validated_data['billing_address_json']['name'] = customer_name
+                if billing_country:
+                    validated_data['billing_address_json']['country'] = billing_country
+        
+        # Store notes in billing_address_json for now (could add a dedicated notes field later)
+        if notes:
+            if 'billing_address_json' not in validated_data:
+                validated_data['billing_address_json'] = {}
+            validated_data['billing_address_json']['notes'] = notes
+        
         validated_data['tenant'] = self.context['tenant']
         invoice = super().create(validated_data)
         for line in lines_data:

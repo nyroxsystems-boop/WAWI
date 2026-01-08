@@ -226,7 +226,7 @@ class Invoice(TenantScopedModel):
         <body>
             <div class="header">
                 <div class="logo-box">
-                    <div style="width: 60px; height: 60px; background: #f3f4f6; border-radius: 8px; display: inline-block; line-height: 60px; text-align: center; color: #9ca3af;">LOGO</div>
+                    {f'<img src="data:image/png;base64,{settings_obj.logo_base64}" style="max-width: 120px; max-height: 80px; object-fit: contain;" />' if settings_obj and settings_obj.logo_base64 else '<div style="width: 60px; height: 60px; background: #f3f4f6; border-radius: 8px; display: inline-block; line-height: 60px; text-align: center; color: #9ca3af;">LOGO</div>'}
                     <div style="margin-top: 10px;">
                         <strong>{settings_obj.company_name if settings_obj else self.tenant.name}</strong><br>
                         <span style="font-size: 9pt; color: #6b7280;">{settings_obj.address_line1 if settings_obj else ''}<br>{settings_obj.city if settings_obj else ''}</span>
