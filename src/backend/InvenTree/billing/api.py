@@ -7,6 +7,7 @@ from django.http import HttpResponse
 from django.urls import include, path
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework.routers import DefaultRouter
 
@@ -16,20 +17,27 @@ from .models import Invoice
 from .serializers import InvoiceSerializer
 
 
+class BillingPagination(PageNumberPagination):
+    """Pagination for billing endpoints."""
+    page_size = 50
+    page_size_query_param = 'page_size'
+    max_page_size = 200
+
+
 class InvoiceViewSet(viewsets.ModelViewSet):
     """CRUD for invoices plus actions."""
 
     permission_classes = [IsTenantOrServiceToken]
     serializer_class = InvoiceSerializer
     queryset = Invoice.objects.select_related('contact', 'order')
-    pagination_class = None
+    pagination_class = BillingPagination
     http_method_names = ['get', 'post', 'patch', 'head', 'options']
 
     def get_queryset(self):
         tenant = getattr(self.request, 'tenant', None)
-        qs = self.queryset
-        if tenant:
-            qs = qs.filter(tenant=tenant)
+        if tenant is None:
+            return self.queryset.none()
+        qs = self.queryset.filter(tenant=tenant)
         status_filter = self.request.query_params.get('status')
         if status_filter:
             qs = qs.filter(status=status_filter)
@@ -231,11 +239,10 @@ class InvoiceExportView(viewsets.ViewSet):
         resp['Content-Disposition'] = 'attachment; filename="invoices.csv"'
         return resp
 
-
 router = DefaultRouter()
 router.trailing_slash = '/?'
 router.register('invoices', InvoiceViewSet, basename='billing-invoices')
 router.register('reports/invoices/export', InvoiceExportView, basename='billing-invoices-export')
-router.register('settings/billing', BillingSettingsViewSet, basename='billing-settings')
+router.register('settings', BillingSettingsViewSet, basename='billing-settings')
 
-api_urls = [path('', include(router.urls))]
+api_urls = [path('billing/', include(router.urls))]

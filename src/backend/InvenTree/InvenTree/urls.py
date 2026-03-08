@@ -104,10 +104,7 @@ apipatterns = [
     path('search/', APISearchView.as_view(), name='api-search'),
     path('health/', HealthView.as_view(), name='api-health'),
     path('health', HealthView.as_view(), name='api-health-noslash'),
-    path('bot/health', wawitest_views.bot_health, name='api-bot-health'),
-    path('bot/health/', wawitest_views.bot_health, name='api-bot-health-slash'),
-    path('dashboard/orders', wawitest_views.dashboard_orders, name='api-dashboard-orders'),
-    path('dashboard/orders/', wawitest_views.dashboard_orders, name='api-dashboard-orders-slash'),
+    # Note: bot/health and dashboard/orders are handled by wws.api.api_urls below
     path('settings/', include(common.api.settings_api_urls)),
     path('stock/', include(stock.api.stock_api_urls)),
     path('ext/', include('extsync.urls')),

@@ -820,6 +820,29 @@ class StockMovementViewSet(TenantScopedViewSet):
         """Create movement and update stock quantities."""
         tenant = getattr(self.request, 'tenant', None)
         user = self.request.user
+
+        # Validate cross-tenant FK references
+        product_id = serializer.validated_data.get('product', {})
+        if hasattr(product_id, 'id'):
+            product_id = product_id.id
+        elif hasattr(product_id, 'pk'):
+            product_id = product_id.pk
+        else:
+            product_id = serializer.validated_data.get('product_id') or serializer.initial_data.get('part_id')
+
+        if product_id and tenant:
+            if not Product.objects.filter(tenant=tenant, id=product_id).exists():
+                from rest_framework.exceptions import ValidationError
+                raise ValidationError({'product': 'Product does not belong to your tenant.'})
+
+        for loc_field in ['from_location', 'to_location']:
+            loc = serializer.validated_data.get(loc_field)
+            if loc and tenant:
+                loc_id = loc.id if hasattr(loc, 'id') else loc
+                if not StockLocation.objects.filter(tenant=tenant, id=loc_id).exists():
+                    from rest_framework.exceptions import ValidationError
+                    raise ValidationError({loc_field: 'Location does not belong to your tenant.'})
+
         movement = serializer.save(
             tenant=tenant,
             created_by=getattr(user, 'username', 'system'),
