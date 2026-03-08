@@ -5,7 +5,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     INVENTREE_HOME="/home/inventree" \
     INVENTREE_MEDIA="/home/inventree/media" \
-    INVENTREE_STATIC="/home/inventree/static"
+    INVENTREE_STATIC="/home/inventree/static" \
+    INVENTREE_STATIC_ROOT="/home/inventree/static" \
+    INVENTREE_MEDIA_ROOT="/home/inventree/media"
 
 # Create a user to run the application
 RUN groupadd -r inventree && useradd -r -g inventree inventree
