@@ -1,5 +1,25 @@
 import os
 import dj_database_url
+
+# ─── Railway path overrides ───────────────────────────────────────────
+# Railway service env vars override Dockerfile ENV values.
+# If old Render paths (/opt/render/...) are still set in Railway,
+# they MUST be corrected here BEFORE settings.py loads,
+# because settings.py calls get_static_dir(), get_backup_dir() etc. at import time.
+_RAILWAY_PATH_DEFAULTS = {
+    'INVENTREE_BACKUP_DIR': '/home/inventree/backup',
+    'INVENTREE_STATIC_ROOT': '/home/inventree/static',
+    'INVENTREE_MEDIA_ROOT': '/home/inventree/media',
+    'INVENTREE_LOG_DIR': '/home/inventree/logs',
+    'INVENTREE_PLUGIN_DIR': '/usr/src/app/InvenTree/plugins',
+    'INVENTREE_WEB_ROOT': '/usr/src/app/InvenTree/InvenTree/web',
+}
+for _key, _default in _RAILWAY_PATH_DEFAULTS.items():
+    _val = os.environ.get(_key, '')
+    if not _val or '/opt/render' in _val:
+        os.environ[_key] = _default
+# ──────────────────────────────────────────────────────────────────────
+
 from .settings import *  # noqa
 
 print("--- LOADING RENDER SETTINGS ---")
