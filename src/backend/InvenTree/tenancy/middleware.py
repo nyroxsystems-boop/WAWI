@@ -24,24 +24,29 @@ class SubdomainTenantMiddleware(MiddlewareMixin):
         host = (request.get_host() or '').split(':')[0]
         parts = host.split('.')
 
-        # Bypass tenancy for Render deployment (wawi-new.onrender.com)
+        # Bypass tenancy for platform deployments (Railway, Render)
         # or any non-subdomain host (e.g., localhost, single-domain deployments)
-        if len(parts) < 3 or host.endswith('.onrender.com'):
+        bypass_suffixes = ('.onrender.com', '.railway.app', '.up.railway.app')
+        if len(parts) < 3 or host.endswith(bypass_suffixes):
             request.tenant = None
             request.tenant_id = None
             request.tenant_user = None
-            logger.debug('tenant.resolve.bypass', extra={'host': host, 'reason': 'non-subdomain or render deployment'})
+            logger.debug('tenant.resolve.bypass', extra={'host': host, 'reason': 'non-subdomain or platform deployment'})
             return None
 
         # Allow selected public endpoints without tenant lookup
         if request.path.startswith((
             '/api/bot/health',
-            '/api/dashboard/orders',
-            '/api/dashboard/offers',
-            '/api/dashboard/suppliers',
-            '/api/dashboard/wws-connections',
+            '/api/dashboard/',
             '/api/wws-connections',
             '/api/bot/inventory/by-oem',
+            '/api/products',
+            '/api/stock-',
+            '/api/purchase-orders',
+            '/api/supplier-articles',
+            '/api/suppliers',
+            '/api/orders',
+            '/api/offers',
         )):
             request.tenant = None
             request.tenant_id = None

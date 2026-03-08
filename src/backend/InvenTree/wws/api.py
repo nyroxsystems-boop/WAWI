@@ -317,12 +317,12 @@ class DealerSuppliersView(APIView):
 
 
 class BotInventoryByOem(APIView):
-    """Bot-facing endpoint to fetch offers by OEM."""
+    """Bot-facing endpoint to fetch offers by OEM. Searches internal catalog + external connections."""
 
     permission_classes = [IsTenantOrServiceToken]
 
     def get(self, request, oem):
-        """Return normalized offers."""
+        """Return normalized offers from internal products + external connections."""
         tenant = getattr(request, 'tenant', None)
         if tenant is None:
             return Response({'detail': 'Tenant required'}, status=status.HTTP_403_FORBIDDEN)
@@ -335,20 +335,72 @@ class BotInventoryByOem(APIView):
         offers = []
         errors = []
 
+        # ── Search internal Product catalog ──
+        internal_products = Product.objects.filter(
+            tenant=tenant, IPN__iexact=oem, status='active'
+        ).prefetch_related('stock_items', 'supplier_articles__supplier')
+
+        for product in internal_products:
+            stock = product.total_in_stock
+            # Add internal product as an offer
+            offers.append({
+                'source': 'internal',
+                'product_id': product.id,
+                'product_name': product.name,
+                'brand': product.brand,
+                'sku': product.IPN,
+                'price': float(product.sale_price),
+                'purchase_price': float(product.purchase_price),
+                'currency': 'EUR',
+                'availability': 'in_stock' if stock > 0 else 'out_of_stock',
+                'stock_quantity': stock,
+                'delivery_days': 0 if stock > 0 else None,
+            })
+
+            # Add supplier offers for this product
+            for sa in product.supplier_articles.select_related('supplier').all():
+                offers.append({
+                    'source': 'supplier',
+                    'supplier_id': sa.supplier_id,
+                    'supplier_name': sa.supplier.name,
+                    'product_name': product.name,
+                    'brand': product.brand,
+                    'sku': sa.supplier_sku or product.IPN,
+                    'price': float(sa.purchase_price),
+                    'currency': sa.currency,
+                    'availability': 'available',
+                    'delivery_days': sa.lead_time_days,
+                    'minimum_order_quantity': sa.minimum_order_quantity,
+                })
+
+        # ── Search external WWS connections ──
         connections = WwsConnection.objects.filter(tenant=tenant, is_active=True)
         for connection in connections:
-            result = fetch_offers_for_connection(connection, oem)
-            offers.extend(result.get('offers') or [])
-            if result.get('error'):
+            try:
+                result = fetch_offers_for_connection(connection, oem)
+                offers.extend(result.get('offers') or [])
+                if result.get('error'):
+                    errors.append({
+                        'connection_id': connection.id,
+                        'error': result['error'],
+                    })
+            except Exception as exc:
+                logger.warning('wws.connection.error', extra={
+                    'connection_id': connection.id,
+                    'oem': oem,
+                    'error': str(exc),
+                })
                 errors.append({
                     'connection_id': connection.id,
-                    'error': result['error'],
+                    'error': str(exc),
                 })
 
         payload = {
             'oem': oem,
             'oemNumber': oem,
             'offers': offers,
+            'totalOffers': len(offers),
+            'internalProducts': internal_products.count(),
             'generated_at': timezone.now().isoformat(),
             'errors': errors,
         }
@@ -456,7 +508,7 @@ class MerchantSettingsView(APIView):
 
 
 class DashboardSummaryView(APIView):
-    """Aggregate stats for HeuteView."""
+    """Aggregate stats for HeuteView — optimized with batch queries."""
 
     permission_classes = [IsTenantOrServiceToken]
 
@@ -465,81 +517,110 @@ class DashboardSummaryView(APIView):
         if tenant is None:
             return Response({'detail': 'Tenant required'}, status=status.HTTP_403_FORBIDDEN)
 
-        # Basic counts
-        orders_new = Order.objects.filter(tenant=tenant, status='new').count()
-        orders_in_progress = Order.objects.filter(tenant=tenant, status__in=['processing', 'collect_part']).count()
-        
-        invoices_issued = Invoice.objects.filter(tenant=tenant, status='ISSUED').count()
-        invoices_draft = Invoice.objects.filter(tenant=tenant, status='DRAFT').count()
-        
-        # Margin stats
-        margin_qs = Offer.objects.filter(
-            order__tenant=tenant,
-            status='published'
-        ).aggregate(avg_margin=models.Avg('meta_json__margin_percent'))
-        avg_margin = margin_qs['avg_margin'] or 0.0
-
-        # Estimate margin revenue from paid invoices (simplified)
-        paid_invoices_sum = Invoice.objects.filter(
-            tenant=tenant, status='PAID'
-        ).aggregate(models.Sum('total'))['total__sum'] or Decimal('0.00')
-        margin_revenue = float(paid_invoices_sum) * (float(avg_margin) / 100.0)
-
-        # Revenue history (last 14 days)
         today = timezone.now().date()
-        revenue_today = Invoice.objects.filter(
-            tenant=tenant, 
-            status__in=['ISSUED', 'SENT', 'PAID'],
-            issue_date=today
-        ).aggregate(models.Sum('total'))['total__sum'] or Decimal('0.00')
+        fourteen_days_ago = today - timezone.timedelta(days=13)
 
+        # ── Batch counts (1 query with conditional aggregation) ──
+        order_counts = Order.objects.filter(tenant=tenant).aggregate(
+            new=models.Count('id', filter=models.Q(status='new')),
+            in_progress=models.Count('id', filter=models.Q(status__in=['processing', 'collect_part'])),
+            total=models.Count('id'),
+        )
+        invoice_counts = Invoice.objects.filter(tenant=tenant).aggregate(
+            draft=models.Count('id', filter=models.Q(status='DRAFT')),
+            issued=models.Count('id', filter=models.Q(status='ISSUED')),
+            paid_total=models.Sum('total', filter=models.Q(status='PAID')),
+        )
+
+        # ── Margin stats ──
+        avg_margin = Offer.objects.filter(
+            order__tenant=tenant, status='published'
+        ).aggregate(avg=models.Avg('meta_json__margin_percent'))['avg'] or 0.0
+
+        paid_total = invoice_counts['paid_total'] or Decimal('0.00')
+        margin_revenue = float(paid_total) * (float(avg_margin) / 100.0)
+
+        # ── Revenue today ──
+        revenue_today = Invoice.objects.filter(
+            tenant=tenant,
+            status__in=['ISSUED', 'SENT', 'PAID'],
+            issue_date=today,
+        ).aggregate(total=models.Sum('total'))['total'] or Decimal('0.00')
+
+        # ── Revenue history — 1 query instead of 14 ──
+        from django.db.models.functions import TruncDate
+        rev_by_day = dict(
+            Invoice.objects.filter(
+                tenant=tenant,
+                status__in=['ISSUED', 'SENT', 'PAID'],
+                issue_date__gte=fourteen_days_ago,
+            ).values('issue_date').annotate(
+                rev=models.Sum('total'),
+            ).values_list('issue_date', 'rev')
+        )
+        orders_by_day = dict(
+            Order.objects.filter(
+                tenant=tenant,
+                created_at__date__gte=fourteen_days_ago,
+            ).annotate(
+                day=TruncDate('created_at'),
+            ).values('day').annotate(
+                cnt=models.Count('id'),
+            ).values_list('day', 'cnt')
+        )
         last_14_days = []
         for i in range(13, -1, -1):
             day = today - timezone.timedelta(days=i)
-            rev = Invoice.objects.filter(
-                tenant=tenant,
-                status__in=['ISSUED', 'SENT', 'PAID'],
-                issue_date=day
-            ).aggregate(models.Sum('total'))['total__sum'] or Decimal('0.00')
             last_14_days.append({
                 'date': day.strftime('%d.%m'),
-                'revenue': float(rev),
-                'orders': Order.objects.filter(tenant=tenant, created_at__date=day).count()
+                'revenue': float(rev_by_day.get(day, 0) or 0),
+                'orders': orders_by_day.get(day, 0),
             })
 
-        # Top customers (by invoice total)
+        # ── Top customers ──
         top_customers_qs = Contact.objects.filter(tenant=tenant).annotate(
-            revenue=models.Sum('invoices__total', filter=models.Q(invoices__status__in=['ISSUED', 'SENT', 'PAID'])),
-            order_count=models.Count('orders', distinct=True)
-        ).order_by('-revenue')[:5]
-        
-        top_customers = []
-        for c in top_customers_qs:
-            top_customers.append({
-                'name': c.name or c.wa_id,
-                'revenue': float(c.revenue or 0),
-                'orders': c.order_count,
-                'avatar': (c.name or '??')[:2].upper()
-            })
+            revenue=models.Sum(
+                'invoices__total',
+                filter=models.Q(invoices__status__in=['ISSUED', 'SENT', 'PAID']),
+            ),
+            order_count=models.Count('orders', distinct=True),
+        ).exclude(revenue__isnull=True).order_by('-revenue')[:5]
 
-        # Recent activities
-        recent_orders = Order.objects.filter(tenant=tenant).select_related('contact').order_by('-updated_at')[:10]
-        activities = []
-        for o in recent_orders:
-            activities.append({
-                'id': f'order-{o.id}',
-                'type': 'order' if o.status != 'new' else 'message',
-                'customer': o.contact.name if o.contact else 'Unbekannt',
-                'description': f'Status: {o.status} | OEM: {o.oem or "N/A"}',
-                'time': o.updated_at.isoformat(),
-                'status': 'processing' if o.status in ['new', 'processing'] else 'success'
-            })
+        top_customers = [{
+            'name': c.name or c.wa_id,
+            'revenue': float(c.revenue or 0),
+            'orders': c.order_count,
+            'avatar': (c.name or '??')[:2].upper(),
+        } for c in top_customers_qs]
+
+        # ── Recent activities ──
+        recent_orders = Order.objects.filter(
+            tenant=tenant,
+        ).select_related('contact').order_by('-updated_at')[:10]
+        activities = [{
+            'id': f'order-{o.id}',
+            'type': 'order' if o.status != 'new' else 'message',
+            'customer': o.contact.name if o.contact else 'Unbekannt',
+            'description': f'Status: {o.status} | OEM: {o.oem or "N/A"}',
+            'time': o.updated_at.isoformat(),
+            'status': 'processing' if o.status in ['new', 'processing'] else 'success',
+        } for o in recent_orders]
+
+        # ── Inventory stats (new!) ──
+        product_qs = Product.objects.filter(tenant=tenant)
+        product_counts = product_qs.annotate(
+            stock=Coalesce(models.Sum('stock_items__quantity'), 0),
+        ).aggregate(
+            total=models.Count('id'),
+            low_stock=models.Count('id', filter=models.Q(stock__lt=models.F('minimum_stock'))),
+            total_value=models.Sum(models.F('stock') * models.F('purchase_price')),
+        )
 
         return Response({
-            'ordersNew': orders_new,
-            'ordersInProgress': orders_in_progress,
-            'invoicesDraft': invoices_draft,
-            'invoicesIssued': invoices_issued,
+            'ordersNew': order_counts['new'],
+            'ordersInProgress': order_counts['in_progress'],
+            'invoicesDraft': invoice_counts['draft'],
+            'invoicesIssued': invoice_counts['issued'],
             'revenueToday': float(revenue_today),
             'revenueHistory': last_14_days,
             'topCustomers': top_customers,
@@ -547,6 +628,12 @@ class DashboardSummaryView(APIView):
             'avgMargin': float(avg_margin),
             'marginRevenue': margin_revenue,
             'lastSync': timezone.now().isoformat(),
+            # New inventory section
+            'inventory': {
+                'totalProducts': product_counts['total'],
+                'lowStockCount': product_counts['low_stock'],
+                'totalValue': float(product_counts['total_value'] or 0),
+            },
         })
 
 
