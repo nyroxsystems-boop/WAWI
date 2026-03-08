@@ -28,6 +28,7 @@ from .models import (
     SupplierRating, VehicleApplication, WwsConnection,
 )
 from .serializers import (
+    BomItemSerializer,
     DealerSupplierSettingSerializer,
     OemCrossReferenceSerializer,
     OfferCreateSerializer,
