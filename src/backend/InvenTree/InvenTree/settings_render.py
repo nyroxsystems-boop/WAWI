@@ -128,10 +128,12 @@ try:
 except Exception:
     CORS_ALLOWED_ORIGINS = _cors_origins
 
-# CSRF configuration for Render deployment
+# CSRF configuration for Railway deployment
 CSRF_TRUSTED_ORIGINS = [
-    'https://autoteile-dashboard.onrender.com',
-    'https://wawi-new.onrender.com',
+    'https://wawi-production.up.railway.app',
+    'http://wawi-production.up.railway.app',
+    'https://*.up.railway.app',
+    'https://*.partsunion.de',
     'http://localhost:5173',
     'http://localhost:4173',
     'http://127.0.0.1:5173',
