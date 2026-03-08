@@ -43,6 +43,11 @@ RUN mkdir -p $INVENTREE_STATIC $INVENTREE_MEDIA \
 # Switch to non-root user
 USER inventree
 
+# Set working directory to InvenTree Django project
+# Structure: src/backend/InvenTree/InvenTree/wsgi.py
+# After COPY, this is at /usr/src/app/InvenTree/InvenTree/wsgi.py
+WORKDIR /usr/src/app/InvenTree
+
 # Expose port (Gunicorn default)
 EXPOSE 8000
 
