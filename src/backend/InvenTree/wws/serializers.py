@@ -4,9 +4,10 @@ from rest_framework import serializers
 
 from channels.serializers import ContactSerializer
 from .models import (
-    DealerSupplierSetting, OemCrossReference, Offer, Order, PriceRule, Product,
-    PurchaseOrder, PurchaseOrderItem, Return, StockItem, StockLocation,
-    StockMovement, Supplier, SupplierArticle, VehicleApplication, WwsConnection,
+    BomItem, DealerSupplierSetting, OemCrossReference, Offer, Order, PriceRule,
+    Product, PurchaseOrder, PurchaseOrderItem, Return, StockItem, StockLocation,
+    StockMovement, Supplier, SupplierArticle, SupplierRating,
+    VehicleApplication, WwsConnection,
 )
 
 
@@ -237,6 +238,49 @@ class PriceRuleSerializer(serializers.ModelSerializer):
         return super().create(validated_data)
 
 
+class BomItemSerializer(serializers.ModelSerializer):
+    """Bill of Materials item serializer."""
+
+    parent_ipn = serializers.CharField(source='parent.IPN', read_only=True)
+    parent_name = serializers.CharField(source='parent.name', read_only=True)
+    component_ipn = serializers.CharField(source='component.IPN', read_only=True)
+    component_name = serializers.CharField(source='component.name', read_only=True)
+
+    class Meta:
+        model = BomItem
+        fields = [
+            'id', 'parent', 'parent_ipn', 'parent_name',
+            'component', 'component_ipn', 'component_name',
+            'quantity', 'notes', 'created_at',
+        ]
+        read_only_fields = ['id', 'parent_ipn', 'parent_name', 'component_ipn', 'component_name', 'created_at']
+
+    def create(self, validated_data):
+        validated_data['tenant'] = self.context.get('tenant')
+        return super().create(validated_data)
+
+
+class SupplierRatingSerializer(serializers.ModelSerializer):
+    """Supplier rating serializer."""
+
+    supplier_name = serializers.CharField(source='supplier.name', read_only=True)
+
+    class Meta:
+        model = SupplierRating
+        fields = [
+            'id', 'supplier', 'supplier_name', 'period',
+            'orders_total', 'orders_on_time', 'orders_late',
+            'avg_delivery_days', 'quality_score', 'return_rate',
+            'communication_score', 'overall_score', 'notes',
+            'created_at', 'updated_at',
+        ]
+        read_only_fields = ['id', 'supplier_name', 'overall_score', 'created_at', 'updated_at']
+
+    def create(self, validated_data):
+        validated_data['tenant'] = self.context.get('tenant')
+        return super().create(validated_data)
+
+
 class ProductSerializer(serializers.ModelSerializer):
     """Product serializer matching frontend Part interface."""
 
@@ -245,6 +289,7 @@ class ProductSerializer(serializers.ModelSerializer):
     cross_references = OemCrossReferenceSerializer(many=True, read_only=True)
     vehicle_applications = VehicleApplicationSerializer(many=True, read_only=True)
     price_rules = PriceRuleSerializer(many=True, read_only=True)
+    bom_items = BomItemSerializer(many=True, read_only=True)
 
     class Meta:
         model = Product
@@ -253,7 +298,7 @@ class ProductSerializer(serializers.ModelSerializer):
             'image', 'minimum_stock', 'article_type', 'status',
             'purchase_price', 'sale_price', 'weight', 'meta_json',
             'total_in_stock', 'stock_locations',
-            'cross_references', 'vehicle_applications', 'price_rules',
+            'cross_references', 'vehicle_applications', 'price_rules', 'bom_items',
             'created_at', 'updated_at',
         ]
         read_only_fields = [

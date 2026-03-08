@@ -22,10 +22,10 @@ from channels.models import Contact
 from tenancy.permissions import IsTenantOrServiceToken
 from .adapters import fetch_offers_for_connection
 from .models import (
-    DealerSupplierSetting, MerchantSettings, OemCrossReference, Offer, Order,
-    PriceRule, Product, PurchaseOrder, PurchaseOrderItem, Return, StockItem,
-    StockLocation, StockMovement, Supplier, SupplierArticle,
-    VehicleApplication, WwsConnection,
+    BomItem, DealerSupplierSetting, MerchantSettings, OemCrossReference, Offer,
+    Order, PriceRule, Product, PurchaseOrder, PurchaseOrderItem, Return,
+    StockItem, StockLocation, StockMovement, Supplier, SupplierArticle,
+    SupplierRating, VehicleApplication, WwsConnection,
 )
 from .serializers import (
     DealerSupplierSettingSerializer,
@@ -44,6 +44,7 @@ from .serializers import (
     StockLocationSerializer,
     StockMovementSerializer,
     SupplierArticleSerializer,
+    SupplierRatingSerializer,
     SupplierSerializer,
     VehicleApplicationSerializer,
     WwsConnectionSerializer,
@@ -1426,6 +1427,120 @@ class PriceRuleViewSet(viewsets.ModelViewSet):
 
 
 # ──────────────────────────────────────────────────────────────
+# Feature 7: BOM Items ViewSet
+# ──────────────────────────────────────────────────────────────
+
+class BomItemViewSet(viewsets.ModelViewSet):
+    """CRUD for Bill of Materials (kit/set components)."""
+
+    permission_classes = [IsTenantOrServiceToken]
+    serializer_class = BomItemSerializer
+    queryset = BomItem.objects.select_related('parent', 'component')
+    pagination_class = WaWiPagination
+
+    def get_queryset(self):
+        tenant = getattr(self.request, 'tenant', None)
+        if not tenant:
+            return self.queryset.none()
+        qs = self.queryset.filter(tenant=tenant)
+        parent_id = self.request.query_params.get('parent')
+        if parent_id:
+            qs = qs.filter(parent_id=parent_id)
+        return qs
+
+    def get_serializer_context(self):
+        ctx = super().get_serializer_context()
+        ctx['tenant'] = getattr(self.request, 'tenant', None)
+        return ctx
+
+    def perform_create(self, serializer):
+        serializer.save(tenant=getattr(self.request, 'tenant', None))
+
+    @action(detail=False, methods=['post'], url_path='explode')
+    def explode_bom(self, request):
+        """Sell a set/kit: deduct all BOM component stock from the given location.
+
+        POST /api/bom-items/explode/  {"parent": 5, "location": 3, "quantity": 1}
+        """
+        tenant = getattr(request, 'tenant', None)
+        parent_id = request.data.get('parent')
+        location_id = request.data.get('location')
+        qty = int(request.data.get('quantity', 1))
+
+        if not all([tenant, parent_id, location_id]):
+            return Response({'detail': 'parent, location required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        bom_items = BomItem.objects.filter(tenant=tenant, parent_id=parent_id).select_related('component')
+        if not bom_items:
+            return Response({'detail': 'No BOM items found'}, status=status.HTTP_404_NOT_FOUND)
+
+        deducted = []
+        for bi in bom_items:
+            needed = bi.quantity * qty
+            stock_item = StockItem.objects.filter(
+                tenant=tenant, product=bi.component, location_id=location_id
+            ).first()
+            if stock_item:
+                stock_item.quantity = max(0, stock_item.quantity - needed)
+                stock_item.save()
+                StockMovement.objects.create(
+                    tenant=tenant, product=bi.component, type='OUT',
+                    quantity=needed, from_location_id=location_id,
+                    reference=f'BOM explode: {bi.parent.IPN}',
+                    created_by=request.user.username if request.user.is_authenticated else 'system',
+                )
+            deducted.append({'component': bi.component.IPN, 'qty_deducted': needed})
+
+        return Response({'deducted': deducted})
+
+
+# ──────────────────────────────────────────────────────────────
+# Feature 8: Supplier Rating ViewSet
+# ──────────────────────────────────────────────────────────────
+
+class SupplierRatingViewSet(viewsets.ModelViewSet):
+    """CRUD for supplier performance ratings."""
+
+    permission_classes = [IsTenantOrServiceToken]
+    serializer_class = SupplierRatingSerializer
+    queryset = SupplierRating.objects.select_related('supplier')
+    pagination_class = WaWiPagination
+
+    def get_queryset(self):
+        tenant = getattr(self.request, 'tenant', None)
+        if not tenant:
+            return self.queryset.none()
+        qs = self.queryset.filter(tenant=tenant)
+        supplier_id = self.request.query_params.get('supplier')
+        if supplier_id:
+            qs = qs.filter(supplier_id=supplier_id)
+        return qs
+
+    def get_serializer_context(self):
+        ctx = super().get_serializer_context()
+        ctx['tenant'] = getattr(self.request, 'tenant', None)
+        return ctx
+
+    def perform_create(self, serializer):
+        instance = serializer.save(tenant=getattr(self.request, 'tenant', None))
+        instance.compute_overall()
+        instance.save(update_fields=['overall_score'])
+
+    def perform_update(self, serializer):
+        instance = serializer.save()
+        instance.compute_overall()
+        instance.save(update_fields=['overall_score'])
+
+    @action(detail=True, methods=['post'])
+    def recalculate(self, request, pk=None):
+        """Recalculate overall score for a supplier rating."""
+        rating = self.get_object()
+        rating.compute_overall()
+        rating.save(update_fields=['overall_score'])
+        return Response(SupplierRatingSerializer(rating).data)
+
+
+# ──────────────────────────────────────────────────────────────
 # Routers and URL patterns
 # ──────────────────────────────────────────────────────────────
 
@@ -1447,6 +1562,8 @@ router.register('oem-cross-refs', OemCrossReferenceViewSet, basename='wws-oem-cr
 router.register('vehicle-applications', VehicleApplicationViewSet, basename='wws-vehicle-applications')
 router.register('returns', ReturnViewSet, basename='wws-returns')
 router.register('price-rules', PriceRuleViewSet, basename='wws-price-rules')
+router.register('bom-items', BomItemViewSet, basename='wws-bom-items')
+router.register('supplier-ratings', SupplierRatingViewSet, basename='wws-supplier-ratings')
 
 api_urls = [
     path('', include(router.urls)),

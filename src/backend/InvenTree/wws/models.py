@@ -644,3 +644,99 @@ class PriceRule(TenantScopedModel):
 
     def __str__(self):
         return f'{self.product.IPN} — {self.profile} (≥{self.min_quantity}): {self.price}€'
+
+
+# ──────────────────────────────────────────────────────────────
+# Feature 7: Bill of Materials / Stücklisten
+# ──────────────────────────────────────────────────────────────
+
+class BomItem(TenantScopedModel):
+    """Links a parent product (kit/set) to its component products.
+
+    Example: "Bremsensatz komplett" = Bremsscheibe + Beläge + Sensor
+    """
+
+    parent = models.ForeignKey(
+        Product, on_delete=models.CASCADE, related_name='bom_items', db_index=True,
+        help_text=_('Parent product (the set/kit)'),
+    )
+    component = models.ForeignKey(
+        Product, on_delete=models.CASCADE, related_name='used_in_bom', db_index=True,
+        help_text=_('Component product'),
+    )
+    quantity = models.IntegerField(default=1, help_text=_('Quantity of component in the parent'))
+    notes = models.TextField(blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = _('BOM Item')
+        verbose_name_plural = _('BOM Items')
+        unique_together = ('tenant', 'parent', 'component')
+        ordering = ['parent', 'component']
+
+    def __str__(self):
+        return f'{self.parent.IPN} → {self.quantity}x {self.component.IPN}'
+
+
+# ──────────────────────────────────────────────────────────────
+# Feature 8: Supplier Rating / Bewertung
+# ──────────────────────────────────────────────────────────────
+
+class SupplierRating(TenantScopedModel):
+    """Tracks supplier performance metrics over time."""
+
+    supplier = models.ForeignKey(
+        Supplier, on_delete=models.CASCADE, related_name='ratings', db_index=True,
+    )
+    period = models.CharField(
+        max_length=16, help_text=_('e.g. 2026-Q1 or 2026-03'),
+    )
+    orders_total = models.IntegerField(default=0)
+    orders_on_time = models.IntegerField(default=0)
+    orders_late = models.IntegerField(default=0)
+    avg_delivery_days = models.DecimalField(
+        max_digits=5, decimal_places=1, default=Decimal('0.0'),
+    )
+    quality_score = models.DecimalField(
+        max_digits=3, decimal_places=1, default=Decimal('0.0'),
+        help_text=_('Quality score 0-10'),
+    )
+    return_rate = models.DecimalField(
+        max_digits=5, decimal_places=2, default=Decimal('0.00'),
+        help_text=_('Return rate as percentage'),
+    )
+    communication_score = models.DecimalField(
+        max_digits=3, decimal_places=1, default=Decimal('0.0'),
+        help_text=_('Communication responsiveness 0-10'),
+    )
+    overall_score = models.DecimalField(
+        max_digits=3, decimal_places=1, default=Decimal('0.0'),
+        help_text=_('Computed overall score 0-10'),
+    )
+    notes = models.TextField(blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = _('Supplier Rating')
+        verbose_name_plural = _('Supplier Ratings')
+        unique_together = ('tenant', 'supplier', 'period')
+        ordering = ['-period']
+        indexes = [
+            models.Index(fields=['tenant', 'supplier', 'period'], name='wws_suprating_idx'),
+        ]
+
+    def compute_overall(self):
+        """Weighted average: 40% on-time, 30% quality, 20% return, 10% comms."""
+        on_time_pct = (self.orders_on_time / max(self.orders_total, 1)) * 10
+        return_penalty = max(0, 10 - float(self.return_rate))
+        self.overall_score = Decimal(str(round(
+            on_time_pct * 0.4 +
+            float(self.quality_score) * 0.3 +
+            return_penalty * 0.2 +
+            float(self.communication_score) * 0.1,
+            1
+        )))
+
+    def __str__(self):
+        return f'{self.supplier.name} — {self.period}: {self.overall_score}/10'
