@@ -33,12 +33,18 @@ RUN pip install --upgrade pip \
 # Copy backend project
 COPY src/backend/ .
 
-# Note: config/ is gitignored — InvenTree reads config from env vars at runtime
-RUN mkdir -p config
+# Create config directory that InvenTree expects (resolves to /usr/config at runtime)
+# Also create writable config dir at /usr/src/app/InvenTree/config for the WORKDIR
+RUN mkdir -p /usr/config /usr/src/app/config /usr/src/app/InvenTree/config \
+    && if [ -f InvenTree/InvenTree/config_template.yaml ]; then \
+    cp InvenTree/InvenTree/config_template.yaml /usr/config/config.yaml; \
+    else \
+    touch /usr/config/config.yaml; \
+    fi
 
-# Create directory for static and media files
+# Create directory for static and media files + fix all ownership
 RUN mkdir -p $INVENTREE_STATIC $INVENTREE_MEDIA \
-    && chown -R inventree:inventree /usr/src/app $INVENTREE_HOME
+    && chown -R inventree:inventree /usr/src/app $INVENTREE_HOME /usr/config
 
 # Switch to non-root user
 USER inventree
