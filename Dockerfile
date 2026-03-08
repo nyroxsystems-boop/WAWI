@@ -42,9 +42,11 @@ COPY src/backend/ .
 # Create config directory that InvenTree expects (resolves to /usr/config at runtime)
 # Also create writable config dir at /usr/src/app/InvenTree/config for the WORKDIR
 RUN mkdir -p /usr/config /usr/src/app/config /usr/src/app/InvenTree/config \
-    && if [ -f InvenTree/InvenTree/config_template.yaml ]; then \
-    cp InvenTree/InvenTree/config_template.yaml /usr/config/config.yaml; \
+    && if [ -f InvenTree/config_template.yaml ]; then \
+    cp InvenTree/config_template.yaml /usr/config/config.yaml; \
+    echo "Copied config_template.yaml to /usr/config/config.yaml"; \
     else \
+    echo "WARNING: config_template.yaml not found, creating empty config"; \
     touch /usr/config/config.yaml; \
     fi
 
