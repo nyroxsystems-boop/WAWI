@@ -33,9 +33,8 @@ RUN pip install --upgrade pip \
 # Copy backend project
 COPY src/backend/ .
 
-# Copy config files (plugins, config.yaml — secrets are provided via env vars)
-COPY config/config.yaml config/config.yaml
-COPY config/plugins.txt config/plugins.txt
+# Note: config/ is gitignored — InvenTree reads config from env vars at runtime
+RUN mkdir -p config
 
 # Create directory for static and media files
 RUN mkdir -p $INVENTREE_STATIC $INVENTREE_MEDIA \
