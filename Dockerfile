@@ -7,7 +7,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     INVENTREE_MEDIA="/home/inventree/media" \
     INVENTREE_STATIC="/home/inventree/static" \
     INVENTREE_STATIC_ROOT="/home/inventree/static" \
-    INVENTREE_MEDIA_ROOT="/home/inventree/media"
+    INVENTREE_MEDIA_ROOT="/home/inventree/media" \
+    INVENTREE_BACKUP_DIR="/home/inventree/backup" \
+    INVENTREE_LOG_DIR="/home/inventree/logs" \
+    INVENTREE_PLUGIN_DIR="/usr/src/app/InvenTree/plugins" \
+    INVENTREE_WEB_ROOT="/usr/src/app/InvenTree/InvenTree/web"
 
 # Create a user to run the application
 RUN groupadd -r inventree && useradd -r -g inventree inventree
@@ -44,8 +48,9 @@ RUN mkdir -p /usr/config /usr/src/app/config /usr/src/app/InvenTree/config \
     touch /usr/config/config.yaml; \
     fi
 
-# Create directory for static and media files + fix all ownership
-RUN mkdir -p $INVENTREE_STATIC $INVENTREE_MEDIA \
+# Create ALL directories InvenTree needs + fix ownership
+RUN mkdir -p $INVENTREE_STATIC $INVENTREE_MEDIA $INVENTREE_BACKUP_DIR $INVENTREE_LOG_DIR \
+    && mkdir -p /usr/src/app/InvenTree/plugins \
     && chown -R inventree:inventree /usr/src/app $INVENTREE_HOME /usr/config
 
 # Switch to non-root user
