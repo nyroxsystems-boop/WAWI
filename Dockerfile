@@ -25,13 +25,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /usr/src/app
 
 # Install Python dependencies
-COPY requirements.txt .
+COPY src/backend/requirements.txt .
 RUN pip install --upgrade pip \
     && pip install -r requirements.txt \
     && pip install gunicorn psycopg2-binary redis invoke
 
-# Copy project
-COPY . .
+# Copy backend project
+COPY src/backend/ .
+
+# Copy config files (plugins, config.yaml — secrets are provided via env vars)
+COPY config/config.yaml config/config.yaml
+COPY config/plugins.txt config/plugins.txt
 
 # Create directory for static and media files
 RUN mkdir -p $INVENTREE_STATIC $INVENTREE_MEDIA \
@@ -43,5 +47,5 @@ USER inventree
 # Expose port (Gunicorn default)
 EXPOSE 8000
 
-# Entrypoint is handled by docker-compose commands (invoke server / invoke worker)
+# Run gunicorn — env vars (DATABASE_URL, SECRET_KEY etc.) provided by Railway
 CMD ["gunicorn", "-b", "0.0.0.0:8000", "InvenTree.wsgi:application"]
