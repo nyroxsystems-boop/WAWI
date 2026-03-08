@@ -28,7 +28,7 @@ WORKDIR /usr/src/app
 COPY src/backend/requirements.txt .
 RUN pip install --upgrade pip \
     && pip install -r requirements.txt \
-    && pip install gunicorn psycopg2-binary redis invoke
+    && pip install gunicorn psycopg2-binary redis invoke dj-database-url
 
 # Copy backend project
 COPY src/backend/ .
