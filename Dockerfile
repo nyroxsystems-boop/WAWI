@@ -50,6 +50,10 @@ RUN mkdir -p /usr/config /usr/src/app/config /usr/src/app/InvenTree/config \
     touch /usr/config/config.yaml; \
     fi
 
+# Copy entrypoint script
+COPY docker-entrypoint.sh /usr/src/app/docker-entrypoint.sh
+RUN chmod +x /usr/src/app/docker-entrypoint.sh
+
 # Create ALL directories InvenTree needs + fix ownership
 RUN mkdir -p $INVENTREE_STATIC $INVENTREE_MEDIA $INVENTREE_BACKUP_DIR $INVENTREE_LOG_DIR \
     && mkdir -p /usr/src/app/InvenTree/plugins \
@@ -59,12 +63,10 @@ RUN mkdir -p $INVENTREE_STATIC $INVENTREE_MEDIA $INVENTREE_BACKUP_DIR $INVENTREE
 USER inventree
 
 # Set working directory to InvenTree Django project
-# Structure: src/backend/InvenTree/InvenTree/wsgi.py
-# After COPY, this is at /usr/src/app/InvenTree/InvenTree/wsgi.py
 WORKDIR /usr/src/app/InvenTree
 
-# Expose port (Gunicorn default)
+# Expose port
 EXPOSE 8000
 
-# Run gunicorn — env vars (DATABASE_URL, SECRET_KEY etc.) provided by Railway
-CMD ["gunicorn", "-b", "0.0.0.0:8000", "InvenTree.wsgi:application"]
+# Run entrypoint: migrate → collectstatic → create admin → gunicorn
+CMD ["/usr/src/app/docker-entrypoint.sh"]
