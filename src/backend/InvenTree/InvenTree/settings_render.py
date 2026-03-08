@@ -24,6 +24,9 @@ from .settings import *  # noqa
 
 print("--- LOADING RENDER SETTINGS ---")
 
+# Railway / production ALLOWED_HOSTS
+ALLOWED_HOSTS = ['*']  # Railway handles host validation at proxy level
+
 # Insert DB health middleware BEFORE tenancy middleware
 if 'tenancy.middleware.SubdomainTenantMiddleware' in MIDDLEWARE:
     MIDDLEWARE.insert(
