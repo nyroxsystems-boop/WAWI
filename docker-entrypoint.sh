@@ -3,6 +3,10 @@ set -e
 
 echo "=== WaWi Startup ==="
 
+# Generate any missing migration files (for new models)
+echo "Generating migrations..."
+python manage.py makemigrations --noinput 2>&1 || echo "WARNING: makemigrations failed"
+
 # Run database migrations
 echo "Running migrations..."
 python manage.py migrate --noinput 2>&1 || echo "WARNING: Migrations failed (DB might not be ready yet)"

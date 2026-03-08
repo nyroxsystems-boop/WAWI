@@ -90,7 +90,7 @@ class TenantUser(models.Model):
 class TenantScopedModel(models.Model):
     """Abstract base for tenant-scoped entities."""
 
-    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, db_index=True, null=True, blank=True)
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, db_index=True)
 
     # Automatically tenant-filtered queryset
     objects = TenantManager()
@@ -107,8 +107,8 @@ class TenantScopedModel(models.Model):
             tenant = get_current_tenant()
             if tenant is not None:
                 self.tenant = tenant
-            # Allow tenant to be None if no current tenant exists
-            # This enables creation of tenant-less companies for initial setup
+            else:
+                raise ValidationError('Tenant is required for all tenant-scoped models.')
 
     def save(self, *args, **kwargs):
         """Ensure tenant is set before saving."""
@@ -116,6 +116,8 @@ class TenantScopedModel(models.Model):
             tenant = get_current_tenant()
             if tenant is not None:
                 self.tenant = tenant
+            else:
+                raise ValueError('Cannot save tenant-scoped model without a tenant.')
         super().save(*args, **kwargs)
 
 

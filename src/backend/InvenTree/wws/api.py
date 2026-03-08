@@ -10,6 +10,7 @@ from django.urls import include, path
 from django.utils import timezone
 from rest_framework import filters, mixins, status, viewsets
 from rest_framework.decorators import action
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework.routers import DefaultRouter
 from rest_framework.views import APIView
@@ -46,11 +47,18 @@ from .serializers import (
 logger = logging.getLogger('inventree')
 
 
+class WaWiPagination(PageNumberPagination):
+    """Default pagination for all WaWi list endpoints."""
+    page_size = 50
+    page_size_query_param = 'page_size'
+    max_page_size = 200
+
+
 class TenantScopedViewSet(viewsets.ModelViewSet):
     """Base viewset to scope by request.tenant."""
 
     permission_classes = [IsTenantOrServiceToken]
-    pagination_class = None
+    pagination_class = WaWiPagination
     queryset = None
 
     def get_serializer_context(self):
