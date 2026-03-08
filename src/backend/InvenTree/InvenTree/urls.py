@@ -33,6 +33,7 @@ import stock.api
 import tenancy.api
 import tenancy.api_admin
 import wws.api
+import wws.ai_views
 import users.api
 from plugin.urls import get_plugin_urls
 from web.urls import cui_compatibility_urls
@@ -110,6 +111,7 @@ apipatterns = [
     path('ext/', include('extsync.urls')),
     path('', include(wws.api.api_urls)),
     path('', include(wws.api.dashboard_urls)),
+    path('', include(wws.ai_views.ai_urls)),
     path('', include(billing.api.api_urls)),
     path('whatsapp/', include(channels.api.whatsapp_api_urls)),
     path(
