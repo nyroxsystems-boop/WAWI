@@ -1,4 +1,4 @@
-"""Models for WWS domain (orders, offers, suppliers, connections)."""
+"""Models for WWS domain (orders, offers, suppliers, connections, inventory)."""
 
 from decimal import Decimal
 
@@ -31,8 +31,16 @@ class Supplier(TenantScopedModel):
     """Supplier data for a tenant."""
 
     name = models.CharField(max_length=255)
+    contact_person = models.CharField(max_length=255, blank=True, default='')
+    email = models.EmailField(blank=True, default='')
+    phone = models.CharField(max_length=64, blank=True, default='')
+    address = models.TextField(blank=True, default='')
+    website = models.URLField(blank=True, default='')
+    notes = models.TextField(blank=True, default='')
+    payment_terms = models.CharField(max_length=128, blank=True, default='')
     rating = models.DecimalField(max_digits=3, decimal_places=2, default=Decimal('0.0'))
     api_type = models.CharField(max_length=50, blank=True, default='')
+    status = models.CharField(max_length=20, default='active')
     meta_json = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -171,3 +179,274 @@ class DealerSupplierSetting(TenantScopedModel):
         ordering = ['priority']
         verbose_name = _('Dealer Supplier Setting')
         verbose_name_plural = _('Dealer Supplier Settings')
+
+
+# ──────────────────────────────────────────────────────────────
+# Inventory Management Models
+# ──────────────────────────────────────────────────────────────
+
+class Product(TenantScopedModel):
+    """Auto parts product / article in the catalogue."""
+
+    class ArticleType(models.TextChoices):
+        STANDARD = 'standard', _('Standard')
+        SET = 'set', _('Set / Kit')
+        DEPOSIT = 'deposit', _('Deposit / Pfand')
+
+    class Status(models.TextChoices):
+        ACTIVE = 'active', _('Active')
+        INACTIVE = 'inactive', _('Inactive')
+
+    name = models.CharField(max_length=255, help_text=_('Product name'))
+    IPN = models.CharField(
+        max_length=100, db_index=True,
+        help_text=_('Internal Part Number / OEM number'),
+    )
+    description = models.TextField(blank=True, default='')
+    brand = models.CharField(max_length=128, blank=True, default='')
+    category_name = models.CharField(max_length=128, blank=True, default='')
+    image = models.ImageField(upload_to='products/', blank=True, null=True)
+    minimum_stock = models.IntegerField(default=0, help_text=_('Minimum stock level before reorder'))
+    article_type = models.CharField(
+        max_length=20, choices=ArticleType.choices, default=ArticleType.STANDARD,
+    )
+    status = models.CharField(
+        max_length=20, choices=Status.choices, default=Status.ACTIVE,
+    )
+    purchase_price = models.DecimalField(
+        max_digits=12, decimal_places=2, default=Decimal('0.00'),
+        help_text=_('Default purchase price (EK)'),
+    )
+    sale_price = models.DecimalField(
+        max_digits=12, decimal_places=2, default=Decimal('0.00'),
+        help_text=_('Default sale price (VK)'),
+    )
+    weight = models.DecimalField(
+        max_digits=10, decimal_places=3, default=Decimal('0.000'),
+        help_text=_('Weight in kg'),
+    )
+    meta_json = models.JSONField(default=dict, blank=True, help_text=_('Extra metadata'))
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = _('Product')
+        verbose_name_plural = _('Products')
+        unique_together = ('tenant', 'IPN')
+        ordering = ['name']
+        indexes = [
+            models.Index(fields=['tenant', 'IPN'], name='wws_product_tenant_ipn_idx'),
+            models.Index(fields=['tenant', 'brand'], name='wws_product_tenant_brand_idx'),
+        ]
+
+    @property
+    def total_in_stock(self):
+        """Sum of all stock items for this product."""
+        return self.stock_items.aggregate(total=models.Sum('quantity'))['total'] or 0
+
+    def __str__(self):
+        return f'{self.IPN} — {self.name}'
+
+
+class StockLocation(TenantScopedModel):
+    """Warehouse location / shelf for storing parts."""
+
+    class LocationType(models.TextChoices):
+        MAIN = 'main', _('Main Warehouse')
+        SHELF = 'shelf', _('Shelf')
+        RETURNS = 'returns', _('Returns')
+        QUARANTINE = 'quarantine', _('Quarantine')
+
+    name = models.CharField(max_length=255)
+    code = models.CharField(
+        max_length=32, help_text=_('Location code, e.g. A1-03'),
+    )
+    type = models.CharField(
+        max_length=20, choices=LocationType.choices, default=LocationType.SHELF,
+    )
+    capacity = models.IntegerField(null=True, blank=True, help_text=_('Max items'))
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = _('Stock Location')
+        verbose_name_plural = _('Stock Locations')
+        unique_together = ('tenant', 'code')
+        ordering = ['code']
+
+    @property
+    def current_stock(self):
+        """Total items at this location."""
+        return self.stock_items.aggregate(total=models.Sum('quantity'))['total'] or 0
+
+    def __str__(self):
+        return f'{self.code} — {self.name}'
+
+
+class StockItem(TenantScopedModel):
+    """Stock quantity for a product at a specific location."""
+
+    product = models.ForeignKey(
+        Product, on_delete=models.CASCADE, related_name='stock_items', db_index=True,
+    )
+    location = models.ForeignKey(
+        StockLocation, on_delete=models.CASCADE, related_name='stock_items', db_index=True,
+    )
+    quantity = models.IntegerField(default=0)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = _('Stock Item')
+        verbose_name_plural = _('Stock Items')
+        unique_together = ('tenant', 'product', 'location')
+        indexes = [
+            models.Index(fields=['tenant', 'product'], name='wws_stockitem_tenant_prod_idx'),
+        ]
+
+    def __str__(self):
+        return f'{self.product.IPN} @ {self.location.code}: {self.quantity}'
+
+
+class StockMovement(TenantScopedModel):
+    """Record of inventory movement (in, out, transfer, correction)."""
+
+    class MovementType(models.TextChoices):
+        IN = 'IN', _('Goods In')
+        OUT = 'OUT', _('Goods Out')
+        TRANSFER = 'TRANSFER', _('Transfer')
+        CORRECTION = 'CORRECTION', _('Correction')
+
+    product = models.ForeignKey(
+        Product, on_delete=models.CASCADE, related_name='movements', db_index=True,
+    )
+    type = models.CharField(max_length=16, choices=MovementType.choices)
+    quantity = models.IntegerField()
+    from_location = models.ForeignKey(
+        StockLocation, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='movements_out',
+    )
+    to_location = models.ForeignKey(
+        StockLocation, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='movements_in',
+    )
+    reference = models.CharField(max_length=128, blank=True, default='')
+    notes = models.TextField(blank=True, default='')
+    created_by = models.CharField(max_length=128, blank=True, default='system')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = _('Stock Movement')
+        verbose_name_plural = _('Stock Movements')
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['tenant', 'product'], name='wws_movement_tenant_prod_idx'),
+            models.Index(fields=['tenant', 'created_at'], name='wws_movement_tenant_date_idx'),
+        ]
+
+    def __str__(self):
+        return f'{self.type} {self.quantity}x {self.product.IPN}'
+
+
+class SupplierArticle(TenantScopedModel):
+    """Links a supplier to a product with pricing and lead time."""
+
+    supplier = models.ForeignKey(
+        Supplier, on_delete=models.CASCADE, related_name='articles', db_index=True,
+    )
+    product = models.ForeignKey(
+        Product, on_delete=models.CASCADE, related_name='supplier_articles', db_index=True,
+    )
+    supplier_sku = models.CharField(max_length=128, blank=True, default='')
+    purchase_price = models.DecimalField(
+        max_digits=12, decimal_places=2, default=Decimal('0.00'),
+    )
+    currency = models.CharField(max_length=8, default='EUR')
+    lead_time_days = models.IntegerField(null=True, blank=True)
+    minimum_order_quantity = models.IntegerField(default=1)
+    is_preferred = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = _('Supplier Article')
+        verbose_name_plural = _('Supplier Articles')
+        unique_together = ('tenant', 'supplier', 'product')
+        ordering = ['supplier__name']
+
+    def __str__(self):
+        return f'{self.supplier.name} → {self.product.IPN} ({self.purchase_price} {self.currency})'
+
+
+class PurchaseOrder(TenantScopedModel):
+    """Purchase order sent to a supplier."""
+
+    class Status(models.TextChoices):
+        DRAFT = 'draft', _('Draft')
+        SENT = 'sent', _('Sent')
+        CONFIRMED = 'confirmed', _('Confirmed')
+        RECEIVED = 'received', _('Received')
+        CANCELLED = 'cancelled', _('Cancelled')
+
+    order_number = models.CharField(max_length=64, blank=True, db_index=True)
+    supplier = models.ForeignKey(
+        Supplier, on_delete=models.CASCADE, related_name='purchase_orders', db_index=True,
+    )
+    status = models.CharField(
+        max_length=20, choices=Status.choices, default=Status.DRAFT,
+    )
+    order_date = models.DateField(auto_now_add=True)
+    expected_delivery = models.DateField(null=True, blank=True)
+    total_amount = models.DecimalField(
+        max_digits=12, decimal_places=2, default=Decimal('0.00'),
+    )
+    currency = models.CharField(max_length=8, default='EUR')
+    notes = models.TextField(blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = _('Purchase Order')
+        verbose_name_plural = _('Purchase Orders')
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['tenant', 'status'], name='wws_po_tenant_status_idx'),
+        ]
+
+    def recalculate_total(self):
+        """Recalculate total from line items."""
+        total = self.items.aggregate(
+            total=models.Sum(models.F('quantity') * models.F('unit_price'))
+        )['total'] or Decimal('0.00')
+        self.total_amount = total
+        self.save(update_fields=['total_amount', 'updated_at'])
+
+    def __str__(self):
+        return f'PO-{self.order_number or self.id} ({self.supplier.name})'
+
+
+class PurchaseOrderItem(TenantScopedModel):
+    """Line item within a purchase order."""
+
+    purchase_order = models.ForeignKey(
+        PurchaseOrder, on_delete=models.CASCADE, related_name='items', db_index=True,
+    )
+    product = models.ForeignKey(
+        Product, on_delete=models.CASCADE, related_name='purchase_order_items',
+    )
+    quantity = models.IntegerField(default=1)
+    unit_price = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
+    received_quantity = models.IntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = _('Purchase Order Item')
+        verbose_name_plural = _('Purchase Order Items')
+
+    @property
+    def total_price(self):
+        return self.quantity * self.unit_price
+
+    def __str__(self):
+        return f'{self.quantity}x {self.product.IPN} @ {self.unit_price}'
+

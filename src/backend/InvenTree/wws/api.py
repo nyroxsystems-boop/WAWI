@@ -1,8 +1,11 @@
 """API definitions for WWS."""
 
+import logging
 from decimal import Decimal
+
 from django.core.cache import cache
 from django.db import models, transaction
+from django.db.models.functions import Coalesce
 from django.urls import include, path
 from django.utils import timezone
 from rest_framework import filters, mixins, status, viewsets
@@ -17,16 +20,30 @@ from outbox.utils import create_event
 from channels.models import Contact
 from tenancy.permissions import IsTenantOrServiceToken
 from .adapters import fetch_offers_for_connection
-from .models import DealerSupplierSetting, Offer, Order, Supplier, WwsConnection, MerchantSettings
+from .models import (
+    DealerSupplierSetting, MerchantSettings, Offer, Order, Product,
+    PurchaseOrder, PurchaseOrderItem, StockItem, StockLocation,
+    StockMovement, Supplier, SupplierArticle, WwsConnection,
+)
 from .serializers import (
     DealerSupplierSettingSerializer,
     OfferCreateSerializer,
     OfferSerializer,
     OrderCreateSerializer,
     OrderSerializer,
+    ProductSerializer,
+    ProductListSerializer,
+    PurchaseOrderSerializer,
+    PurchaseOrderCreateSerializer,
+    PurchaseOrderItemSerializer,
+    StockLocationSerializer,
+    StockMovementSerializer,
+    SupplierArticleSerializer,
     SupplierSerializer,
     WwsConnectionSerializer,
 )
+
+logger = logging.getLogger('inventree')
 
 
 class TenantScopedViewSet(viewsets.ModelViewSet):
@@ -56,11 +73,13 @@ class TenantScopedViewSet(viewsets.ModelViewSet):
 
 
 class SupplierViewSet(TenantScopedViewSet):
-    """Manage suppliers."""
+    """Manage suppliers (full CRUD)."""
 
     serializer_class = SupplierSerializer
     queryset = Supplier.objects.all()
-    http_method_names = ['get', 'post', 'head', 'options']
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ['name', 'contact_person', 'email']
+    ordering = ['name']
 
 
 class OrderViewSet(TenantScopedViewSet):
@@ -568,13 +587,367 @@ class RequestIntakeView(APIView):
         return Response({'order_id': order.id, 'order': OrderSerializer(order).data}, status=status.HTTP_201_CREATED)
 
 
+# ──────────────────────────────────────────────────────────────
+# Inventory ViewSets
+# ──────────────────────────────────────────────────────────────
+
+
+class ProductViewSet(TenantScopedViewSet):
+    """Full CRUD for products / auto parts."""
+
+    serializer_class = ProductSerializer
+    queryset = Product.objects.all()
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ['name', 'IPN', 'brand', 'description']
+    ordering_fields = ['name', 'IPN', 'created_at']
+    ordering = ['name']
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return ProductListSerializer
+        return ProductSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        # Annotate total_in_stock for list performance
+        qs = qs.annotate(
+            total_in_stock=Coalesce(
+                models.Sum('stock_items__quantity'), 0
+            )
+        )
+        # Filters
+        brand = self.request.query_params.get('brand')
+        if brand:
+            qs = qs.filter(brand__iexact=brand)
+        status_filter = self.request.query_params.get('status')
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+        category = self.request.query_params.get('category')
+        if category:
+            qs = qs.filter(category_name__iexact=category)
+        return qs
+
+    @action(detail=False, methods=['get'])
+    def stats(self, request):
+        """Server-side aggregated stats."""
+        tenant = getattr(request, 'tenant', None)
+        qs = Product.objects.filter(tenant=tenant)
+        total = qs.count()
+        qs_annotated = qs.annotate(
+            stock=Coalesce(models.Sum('stock_items__quantity'), 0)
+        )
+        low_stock = qs_annotated.filter(stock__lt=models.F('minimum_stock')).count()
+        total_value = qs_annotated.aggregate(
+            val=models.Sum(models.F('stock') * models.F('purchase_price'))
+        )['val'] or Decimal('0.00')
+        return Response({
+            'totalArticles': total,
+            'lowStockCount': low_stock,
+            'totalValue': float(total_value),
+        })
+
+    @action(detail=False, methods=['get'], url_path='reorder-suggestions')
+    def reorder_suggestions(self, request):
+        """Server-side reorder suggestions."""
+        tenant = getattr(request, 'tenant', None)
+        qs = Product.objects.filter(tenant=tenant).annotate(
+            stock=Coalesce(models.Sum('stock_items__quantity'), 0)
+        ).filter(stock__lt=models.F('minimum_stock'))
+        results = []
+        for p in qs:
+            results.append({
+                'part': ProductListSerializer(p).data,
+                'current_stock': p.stock,
+                'minimum_stock': p.minimum_stock,
+                'suggested_order_quantity': max(p.minimum_stock - p.stock, p.minimum_stock),
+            })
+        return Response(results)
+
+    @action(detail=True, methods=['get'])
+    def movements(self, request, pk=None):
+        """Movement history for a specific product."""
+        product = self.get_object()
+        movements = StockMovement.objects.filter(
+            tenant=request.tenant, product=product
+        ).select_related('from_location', 'to_location', 'product')[:50]
+        return Response(StockMovementSerializer(movements, many=True).data)
+
+    @action(detail=True, methods=['get'])
+    def suppliers(self, request, pk=None):
+        """Supplier articles for a specific product."""
+        product = self.get_object()
+        articles = SupplierArticle.objects.filter(
+            tenant=request.tenant, product=product
+        ).select_related('supplier')
+        return Response(SupplierArticleSerializer(articles, many=True).data)
+
+
+class StockLocationViewSet(TenantScopedViewSet):
+    """CRUD for warehouse locations."""
+
+    serializer_class = StockLocationSerializer
+    queryset = StockLocation.objects.all()
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        qs = qs.annotate(
+            current_stock=Coalesce(
+                models.Sum('stock_items__quantity'), 0
+            )
+        )
+        return qs
+
+
+class StockMovementViewSet(TenantScopedViewSet):
+    """Create and list stock movements. Creating a movement auto-updates stock."""
+
+    serializer_class = StockMovementSerializer
+    queryset = StockMovement.objects.select_related('product', 'from_location', 'to_location')
+    http_method_names = ['get', 'post', 'head', 'options']
+    filter_backends = [filters.OrderingFilter]
+    ordering = ['-created_at']
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        part_id = self.request.query_params.get('part_id')
+        if part_id:
+            qs = qs.filter(product_id=part_id)
+        limit = self.request.query_params.get('limit')
+        if limit:
+            try:
+                qs = qs[:int(limit)]
+            except (ValueError, TypeError):
+                pass
+        return qs
+
+    @transaction.atomic
+    def perform_create(self, serializer):
+        """Create movement and update stock quantities."""
+        tenant = getattr(self.request, 'tenant', None)
+        user = self.request.user
+        movement = serializer.save(
+            tenant=tenant,
+            created_by=getattr(user, 'username', 'system'),
+        )
+        product = movement.product
+        mv_type = movement.type
+
+        if mv_type == StockMovement.MovementType.IN and movement.to_location:
+            item, _ = StockItem.objects.get_or_create(
+                tenant=tenant, product=product, location=movement.to_location,
+                defaults={'quantity': 0},
+            )
+            item.quantity += movement.quantity
+            item.save(update_fields=['quantity', 'updated_at'])
+
+        elif mv_type == StockMovement.MovementType.OUT and movement.from_location:
+            item, _ = StockItem.objects.get_or_create(
+                tenant=tenant, product=product, location=movement.from_location,
+                defaults={'quantity': 0},
+            )
+            item.quantity = max(0, item.quantity - movement.quantity)
+            item.save(update_fields=['quantity', 'updated_at'])
+
+        elif mv_type == StockMovement.MovementType.TRANSFER:
+            if movement.from_location:
+                src, _ = StockItem.objects.get_or_create(
+                    tenant=tenant, product=product, location=movement.from_location,
+                    defaults={'quantity': 0},
+                )
+                src.quantity = max(0, src.quantity - movement.quantity)
+                src.save(update_fields=['quantity', 'updated_at'])
+            if movement.to_location:
+                dst, _ = StockItem.objects.get_or_create(
+                    tenant=tenant, product=product, location=movement.to_location,
+                    defaults={'quantity': 0},
+                )
+                dst.quantity += movement.quantity
+                dst.save(update_fields=['quantity', 'updated_at'])
+
+        elif mv_type == StockMovement.MovementType.CORRECTION:
+            loc = movement.to_location or movement.from_location
+            if loc:
+                item, _ = StockItem.objects.get_or_create(
+                    tenant=tenant, product=product, location=loc,
+                    defaults={'quantity': 0},
+                )
+                item.quantity = movement.quantity  # absolute set
+                item.save(update_fields=['quantity', 'updated_at'])
+
+        logger.info('stock.movement.created', extra={
+            'tenant': getattr(tenant, 'slug', None),
+            'product': product.IPN,
+            'type': mv_type,
+            'quantity': movement.quantity,
+        })
+
+
+class SupplierArticleViewSet(TenantScopedViewSet):
+    """CRUD for supplier-product links."""
+
+    serializer_class = SupplierArticleSerializer
+    queryset = SupplierArticle.objects.select_related('supplier', 'product')
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        supplier_id = self.request.query_params.get('supplier_id')
+        if supplier_id:
+            qs = qs.filter(supplier_id=supplier_id)
+        product_id = self.request.query_params.get('product_id')
+        if product_id:
+            qs = qs.filter(product_id=product_id)
+        return qs
+
+
+class PurchaseOrderViewSet(TenantScopedViewSet):
+    """CRUD for purchase orders + receive action."""
+
+    serializer_class = PurchaseOrderSerializer
+    queryset = PurchaseOrder.objects.select_related('supplier').prefetch_related('items__product')
+    filter_backends = [filters.OrderingFilter]
+    ordering = ['-created_at']
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        status_filter = self.request.query_params.get('status')
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+        return qs
+
+    @transaction.atomic
+    def create(self, request, *args, **kwargs):
+        """Create PO with nested items."""
+        tenant = getattr(request, 'tenant', None)
+        if not tenant:
+            return Response({'detail': 'Tenant required'}, status=status.HTTP_403_FORBIDDEN)
+
+        items_data = request.data.get('items', [])
+        supplier_id = request.data.get('supplier')
+        supplier = Supplier.objects.filter(tenant=tenant, id=supplier_id).first()
+        if not supplier:
+            return Response({'detail': 'Supplier not found'}, status=status.HTTP_400_BAD_REQUEST)
+
+        po = PurchaseOrder.objects.create(
+            tenant=tenant,
+            supplier=supplier,
+            expected_delivery=request.data.get('expected_delivery'),
+            notes=request.data.get('notes', ''),
+            currency=request.data.get('currency', 'EUR'),
+        )
+        # Auto-generate order number
+        po.order_number = f'PO-{po.id:06d}'
+        po.save(update_fields=['order_number'])
+
+        for item_data in items_data:
+            product = Product.objects.filter(
+                tenant=tenant, id=item_data.get('product') or item_data.get('part_id')
+            ).first()
+            if product:
+                PurchaseOrderItem.objects.create(
+                    tenant=tenant,
+                    purchase_order=po,
+                    product=product,
+                    quantity=item_data.get('quantity', 1),
+                    unit_price=Decimal(str(item_data.get('unit_price', product.purchase_price))),
+                )
+
+        po.recalculate_total()
+        return Response(
+            PurchaseOrderSerializer(po).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    @action(detail=True, methods=['post'])
+    def receive(self, request, pk=None):
+        """Receive goods for a PO — creates stock movements and updates stock."""
+        po = self.get_object()
+        tenant = getattr(request, 'tenant', None)
+
+        if po.status in ('received', 'cancelled'):
+            return Response(
+                {'detail': f'Cannot receive PO in status {po.status}'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        location_id = request.data.get('location_id')
+        location = None
+        if location_id:
+            location = StockLocation.objects.filter(tenant=tenant, id=location_id).first()
+
+        received_items = request.data.get('items', [])
+        movements_created = []
+
+        with transaction.atomic():
+            for recv in received_items:
+                poi = po.items.filter(
+                    id=recv.get('item_id') or recv.get('id')
+                ).first()
+                if not poi:
+                    continue
+
+                qty = int(recv.get('quantity', poi.quantity))
+                poi.received_quantity += qty
+                poi.save(update_fields=['received_quantity', 'updated_at'])
+
+                target_loc = location
+                if not target_loc:
+                    # Default to first location
+                    target_loc = StockLocation.objects.filter(tenant=tenant).first()
+
+                if target_loc:
+                    movement = StockMovement.objects.create(
+                        tenant=tenant,
+                        product=poi.product,
+                        type=StockMovement.MovementType.IN,
+                        quantity=qty,
+                        to_location=target_loc,
+                        reference=f'PO-{po.order_number}',
+                        notes=f'Received from {po.supplier.name}',
+                        created_by=getattr(request.user, 'username', 'system'),
+                    )
+                    # Update stock
+                    item, _ = StockItem.objects.get_or_create(
+                        tenant=tenant, product=poi.product, location=target_loc,
+                        defaults={'quantity': 0},
+                    )
+                    item.quantity += qty
+                    item.save(update_fields=['quantity', 'updated_at'])
+                    movements_created.append(movement.id)
+
+            # Check if all items fully received
+            all_received = all(
+                poi.received_quantity >= poi.quantity for poi in po.items.all()
+            )
+            if all_received:
+                po.status = PurchaseOrder.Status.RECEIVED
+            else:
+                po.status = PurchaseOrder.Status.CONFIRMED
+            po.save(update_fields=['status', 'updated_at'])
+
+        return Response({
+            'status': po.status,
+            'movements_created': len(movements_created),
+            'order': PurchaseOrderSerializer(po).data,
+        })
+
+
+# ──────────────────────────────────────────────────────────────
 # Routers and URL patterns
+# ──────────────────────────────────────────────────────────────
+
 router = DefaultRouter()
 router.trailing_slash = '/?'
+# Existing
 router.register('orders', OrderViewSet, basename='wws-orders')
 router.register('offers', OfferViewSet, basename='wws-offers')
 router.register('suppliers', SupplierViewSet, basename='wws-suppliers')
 router.register('wws-connections', WwsConnectionViewSet, basename='wws-connections')
+# New inventory endpoints
+router.register('products', ProductViewSet, basename='wws-products')
+router.register('stock-locations', StockLocationViewSet, basename='wws-stock-locations')
+router.register('stock-movements', StockMovementViewSet, basename='wws-stock-movements')
+router.register('supplier-articles', SupplierArticleViewSet, basename='wws-supplier-articles')
+router.register('purchase-orders', PurchaseOrderViewSet, basename='wws-purchase-orders')
 
 api_urls = [
     path('', include(router.urls)),
