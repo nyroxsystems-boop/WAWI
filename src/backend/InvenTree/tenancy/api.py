@@ -1,5 +1,6 @@
 """API endpoints for tenancy and authentication."""
 
+from django.contrib.auth import authenticate
 from django.urls import path
 
 from rest_framework import status
@@ -146,7 +147,7 @@ class MyTenantsView(APIView):
 
 
 class MeView(APIView):
-    """Return current user and active tenant details."""
+    """Return current user and active tenant details. Supports PATCH for profile updates."""
 
     def get(self, request):
         if not request.user.is_authenticated:
@@ -174,6 +175,43 @@ class MeView(APIView):
             'role': getattr(request, 'tenant_role', None),
         })
 
+    def patch(self, request):
+        """Update current user's profile fields."""
+        if not request.user.is_authenticated:
+            return Response({'detail': 'Not authenticated'}, status=status.HTTP_401_UNAUTHORIZED)
+
+        user = request.user
+        for field in ['first_name', 'last_name', 'email']:
+            if field in request.data:
+                setattr(user, field, request.data[field])
+        user.save()
+
+        return self.get(request)
+
+
+class ChangePasswordView(APIView):
+    """Change current user's password."""
+
+    def post(self, request):
+        if not request.user.is_authenticated:
+            return Response({'detail': 'Not authenticated'}, status=status.HTTP_401_UNAUTHORIZED)
+
+        current_password = request.data.get('current_password')
+        new_password = request.data.get('new_password')
+
+        if not current_password or not new_password:
+            return Response({'detail': 'Both current_password and new_password are required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not request.user.check_password(current_password):
+            return Response({'detail': 'Current password is incorrect.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if len(new_password) < 8:
+            return Response({'detail': 'New password must be at least 8 characters.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        request.user.set_password(new_password)
+        request.user.save()
+        return Response({'success': True})
+
 
 class TeamListView(APIView):
     """List all users in the current tenant."""
@@ -199,7 +237,6 @@ class TeamListView(APIView):
 
 auth_api_urls = [
     path('login/', TenantLoginView.as_view(), name='api-auth-login'),
-    # Allow slashless variants for compat (dashboard/bot/smoke script).
     path('login', TenantLoginView.as_view(), name='api-auth-login-noslash'),
     path('refresh/', TenantTokenRefreshView.as_view(), name='api-auth-refresh'),
     path('refresh', TenantTokenRefreshView.as_view(), name='api-auth-refresh-noslash'),
@@ -209,6 +246,8 @@ auth_api_urls = [
     path('me/tenants', MyTenantsView.as_view(), name='api-auth-my-tenants-noslash'),
     path('me/', MeView.as_view(), name='api-auth-me'),
     path('me', MeView.as_view(), name='api-auth-me-noslash'),
+    path('change-password/', ChangePasswordView.as_view(), name='api-auth-change-password'),
+    path('change-password', ChangePasswordView.as_view(), name='api-auth-change-password-noslash'),
     path('team/', TeamListView.as_view(), name='api-auth-team'),
     path('team', TeamListView.as_view(), name='api-auth-team-noslash'),
 ]

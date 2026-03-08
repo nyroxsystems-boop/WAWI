@@ -55,6 +55,52 @@ class InvoiceViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(tenant=getattr(self.request, 'tenant', None))
 
+    @action(detail=False, methods=['post'], url_path='bulk-create')
+    def bulk_create(self, request):
+        """Create invoices for multiple orders at once."""
+        from wws.models import Order
+        from billing.models import InvoiceLine
+        from decimal import Decimal
+
+        tenant = getattr(request, 'tenant', None)
+        if not tenant:
+            return Response({'detail': 'Tenant required'}, status=status.HTTP_403_FORBIDDEN)
+
+        order_ids = request.data.get('orderIds', [])
+        success = []
+        failed = []
+
+        for oid in order_ids:
+            try:
+                order = Order.objects.filter(tenant=tenant, id=oid).first()
+                if not order:
+                    failed.append({'orderId': str(oid), 'error': 'Order not found'})
+                    continue
+
+                invoice = Invoice.objects.create(
+                    tenant=tenant,
+                    order=order,
+                    contact=order.contact,
+                    currency=order.currency or 'EUR',
+                    status='DRAFT',
+                )
+                unit_price = order.total_price if order.total_price else Decimal('0')
+                InvoiceLine.objects.create(
+                    tenant=tenant,
+                    invoice=invoice,
+                    description=order.oem or f'Order {order.id}',
+                    quantity=1,
+                    unit_price=unit_price,
+                    tax_rate=0,
+                )
+                invoice.recalculate_totals()
+                invoice.save()
+                success.append(InvoiceSerializer(invoice).data)
+            except Exception as e:
+                failed.append({'orderId': str(oid), 'error': str(e)})
+
+        return Response({'success': success, 'failed': failed})
+
     @action(detail=True, methods=['post'])
     def issue(self, request, pk=None):
         invoice = self.get_object()

@@ -614,15 +614,15 @@ class DashboardSummaryView(APIView):
             'status': 'processing' if o.status in ['new', 'processing'] else 'success',
         } for o in recent_orders]
 
-        # ── Inventory stats (new!) ──
-        product_qs = Product.objects.filter(tenant=tenant)
-        product_counts = product_qs.annotate(
+        # ── Inventory stats ──
+        product_qs = Product.objects.filter(tenant=tenant).annotate(
             stock=Coalesce(models.Sum('stock_items__quantity'), 0),
-        ).aggregate(
-            total=models.Count('id'),
-            low_stock=models.Count('id', filter=models.Q(stock__lt=models.F('minimum_stock'))),
-            total_value=models.Sum(models.F('stock') * models.F('purchase_price')),
         )
+        total_products = product_qs.count()
+        low_stock_count = product_qs.filter(stock__lt=models.F('minimum_stock')).count()
+        total_value = product_qs.aggregate(
+            val=models.Sum(models.F('stock') * models.F('purchase_price'))
+        )['val'] or Decimal('0.00')
 
         return Response({
             'ordersNew': order_counts['new'],
@@ -638,9 +638,9 @@ class DashboardSummaryView(APIView):
             'lastSync': timezone.now().isoformat(),
             # New inventory section
             'inventory': {
-                'totalProducts': product_counts['total'],
-                'lowStockCount': product_counts['low_stock'],
-                'totalValue': float(product_counts['total_value'] or 0),
+                'totalProducts': total_products,
+                'lowStockCount': low_stock_count,
+                'totalValue': float(total_value),
             },
         })
 
