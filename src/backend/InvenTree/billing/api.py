@@ -239,7 +239,6 @@ class BillingSettingsViewSet(viewsets.ViewSet):
         return Response({'detail': 'updated'})
 
 
-
 class InvoiceExportView(viewsets.ViewSet):
     """Export invoices to CSV."""
 
@@ -258,37 +257,70 @@ class InvoiceExportView(viewsets.ViewSet):
         buffer = StringIO()
         writer = csv.writer(buffer)
         writer.writerow([
-            'id',
-            'invoice_number',
-            'status',
-            'total',
-            'currency',
-            'issue_date',
-            'due_date',
-            'order_id',
-            'contact_id',
+            'id', 'invoice_number', 'invoice_type', 'status', 'total',
+            'currency', 'issue_date', 'due_date', 'order_id', 'contact_id',
         ])
         for inv in qs:
             writer.writerow([
-                inv.id,
-                inv.invoice_number,
-                inv.status,
-                inv.total,
-                inv.currency,
-                inv.issue_date,
-                inv.due_date,
-                inv.order_id,
-                inv.contact_id,
+                inv.id, inv.invoice_number, inv.invoice_type, inv.status,
+                inv.total, inv.currency, inv.issue_date, inv.due_date,
+                inv.order_id, inv.contact_id,
             ])
 
         resp = HttpResponse(buffer.getvalue(), content_type='text/csv')
         resp['Content-Disposition'] = 'attachment; filename="invoices.csv"'
         return resp
 
+
+class DATEVExportView(viewsets.ViewSet):
+    """Export invoices in DATEV Buchungsstapel format."""
+
+    permission_classes = [IsTenantOrServiceToken]
+
+    def list(self, request):
+        tenant = getattr(request, 'tenant', None)
+        qs = Invoice.objects.filter(tenant=tenant) if tenant else Invoice.objects.none()
+        qs = qs.exclude(status='DRAFT')
+
+        start = request.query_params.get('from')
+        end = request.query_params.get('to')
+        if start:
+            qs = qs.filter(issue_date__gte=start)
+        if end:
+            qs = qs.filter(issue_date__lte=end)
+
+        buffer = StringIO()
+        writer = csv.DictWriter(buffer, fieldnames=[
+            'Umsatz', 'Soll/Haben', 'Konto', 'Gegenkonto',
+            'BU-Schlüssel', 'Belegdatum', 'Belegfeld 1', 'Buchungstext',
+        ], delimiter=';', quoting=csv.QUOTE_ALL)
+        writer.writeheader()
+
+        for inv in qs.order_by('issue_date'):
+            is_credit = inv.invoice_type == 'credit_note'
+            contact_name = inv.contact.name if inv.contact else 'Unbekannt'
+
+            writer.writerow({
+                'Umsatz': str(abs(float(inv.total))).replace('.', ','),
+                'Soll/Haben': 'H' if not is_credit else 'S',
+                'Konto': '8400' if not is_credit else '8730',  # Erlöse / Erlösminderung
+                'Gegenkonto': '10000',  # Forderungen
+                'BU-Schlüssel': '3' if float(inv.tax_total) > 0 else '0',  # 3 = 19% MwSt
+                'Belegdatum': inv.issue_date.strftime('%d%m') if inv.issue_date else '',
+                'Belegfeld 1': inv.invoice_number or '',
+                'Buchungstext': f'{"Gutschrift" if is_credit else "Rechnung"} {contact_name}',
+            })
+
+        resp = HttpResponse(buffer.getvalue(), content_type='text/csv; charset=utf-8')
+        resp['Content-Disposition'] = 'attachment; filename="datev_export.csv"'
+        return resp
+
+
 router = DefaultRouter()
 router.trailing_slash = '/?'
 router.register('invoices', InvoiceViewSet, basename='billing-invoices')
 router.register('reports/invoices/export', InvoiceExportView, basename='billing-invoices-export')
+router.register('reports/datev', DATEVExportView, basename='billing-datev-export')
 router.register('settings', BillingSettingsViewSet, basename='billing-settings')
 
 api_urls = [path('billing/', include(router.urls))]

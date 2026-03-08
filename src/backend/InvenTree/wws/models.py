@@ -450,3 +450,197 @@ class PurchaseOrderItem(TenantScopedModel):
     def __str__(self):
         return f'{self.quantity}x {self.product.IPN} @ {self.unit_price}'
 
+
+# ──────────────────────────────────────────────────────────────
+# Feature 1: OEM Cross-Reference
+# ──────────────────────────────────────────────────────────────
+
+class OemCrossReference(TenantScopedModel):
+    """Maps alternative OEM numbers to a product.
+
+    Example: Product IPN=1K0615301AD (VW) has cross-references:
+        - TRW → DF6134
+        - ATE → 24.0128-0267.1
+        - Brembo → 09.C881.11
+    """
+
+    class OemType(models.TextChoices):
+        OE = 'OE', _('Original Equipment')
+        AFTERMARKET = 'AM', _('Aftermarket')
+        PARALLEL = 'PARALLEL', _('Parallel OEM')
+        CROSS = 'CROSS', _('Generic Cross-Reference')
+
+    product = models.ForeignKey(
+        Product, on_delete=models.CASCADE, related_name='cross_references', db_index=True,
+    )
+    oem_number = models.CharField(
+        max_length=100, db_index=True,
+        help_text=_('Alternative OEM / part number'),
+    )
+    brand = models.CharField(
+        max_length=128, blank=True, default='',
+        help_text=_('Brand that uses this number, e.g. TRW, ATE, Brembo'),
+    )
+    oem_type = models.CharField(
+        max_length=16, choices=OemType.choices, default=OemType.CROSS,
+    )
+    source = models.CharField(
+        max_length=64, blank=True, default='manual',
+        help_text=_('How this reference was added: manual, tecdoc, import, ai'),
+    )
+    notes = models.TextField(blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = _('OEM Cross-Reference')
+        verbose_name_plural = _('OEM Cross-References')
+        unique_together = ('tenant', 'product', 'oem_number')
+        indexes = [
+            models.Index(fields=['tenant', 'oem_number'], name='wws_oem_xref_tenant_oem_idx'),
+            models.Index(fields=['tenant', 'brand'], name='wws_oem_xref_tenant_brand_idx'),
+        ]
+
+    def __str__(self):
+        return f'{self.oem_number} ({self.brand}) → {self.product.IPN}'
+
+
+# ──────────────────────────────────────────────────────────────
+# Feature 3: Vehicle Application (KBA/HSN/TSN to Product)
+# ──────────────────────────────────────────────────────────────
+
+class VehicleApplication(TenantScopedModel):
+    """Maps a product to specific vehicles via KBA numbers or make/model/year."""
+
+    product = models.ForeignKey(
+        Product, on_delete=models.CASCADE, related_name='vehicle_applications', db_index=True,
+    )
+    kba_hsn = models.CharField(
+        max_length=16, blank=True, default='',
+        help_text=_('KBA Herstellerschlüssel (HSN), e.g. 0603'),
+    )
+    kba_tsn = models.CharField(
+        max_length=16, blank=True, default='',
+        help_text=_('KBA Typschlüssel (TSN), e.g. BKP'),
+    )
+    make = models.CharField(max_length=64, blank=True, default='', help_text=_('e.g. VW'))
+    model = models.CharField(max_length=128, blank=True, default='', help_text=_('e.g. Golf VII'))
+    year_from = models.IntegerField(null=True, blank=True, help_text=_('Production start year'))
+    year_to = models.IntegerField(null=True, blank=True, help_text=_('Production end year'))
+    engine_code = models.CharField(max_length=32, blank=True, default='', help_text=_('e.g. CRLB'))
+    engine_type = models.CharField(max_length=64, blank=True, default='', help_text=_('e.g. 2.0 TDI 150PS'))
+    notes = models.TextField(blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = _('Vehicle Application')
+        verbose_name_plural = _('Vehicle Applications')
+        indexes = [
+            models.Index(fields=['tenant', 'kba_hsn', 'kba_tsn'], name='wws_vehicle_kba_idx'),
+            models.Index(fields=['tenant', 'make', 'model'], name='wws_vehicle_make_model_idx'),
+        ]
+
+    def __str__(self):
+        return f'{self.make} {self.model} ({self.kba_hsn}/{self.kba_tsn}) → {self.product.IPN}'
+
+
+# ──────────────────────────────────────────────────────────────
+# Feature 2: Returns Management
+# ──────────────────────────────────────────────────────────────
+
+class Return(TenantScopedModel):
+    """Tracks product returns from customers."""
+
+    class ReturnStatus(models.TextChoices):
+        REQUESTED = 'requested', _('Requested')
+        APPROVED = 'approved', _('Approved')
+        RECEIVED = 'received', _('Received')
+        INSPECTED = 'inspected', _('Inspected')
+        REFUNDED = 'refunded', _('Refunded')
+        REJECTED = 'rejected', _('Rejected')
+
+    class ReturnReason(models.TextChoices):
+        WRONG_PART = 'wrong_part', _('Wrong Part Delivered')
+        DEFECTIVE = 'defective', _('Defective / DOA')
+        NOT_NEEDED = 'not_needed', _('No Longer Needed')
+        WRONG_ORDER = 'wrong_order', _('Customer Ordered Wrong')
+        WARRANTY = 'warranty', _('Warranty Claim')
+        OTHER = 'other', _('Other')
+
+    order = models.ForeignKey(
+        Order, on_delete=models.CASCADE, related_name='returns', null=True, blank=True,
+    )
+    product = models.ForeignKey(
+        Product, on_delete=models.CASCADE, related_name='returns', null=True, blank=True,
+    )
+    contact = models.ForeignKey(
+        Contact, on_delete=models.SET_NULL, null=True, blank=True, related_name='returns',
+    )
+    quantity = models.IntegerField(default=1)
+    reason = models.CharField(
+        max_length=32, choices=ReturnReason.choices, default=ReturnReason.OTHER,
+    )
+    status = models.CharField(
+        max_length=32, choices=ReturnStatus.choices, default=ReturnStatus.REQUESTED,
+    )
+    refund_amount = models.DecimalField(
+        max_digits=12, decimal_places=2, default=Decimal('0.00'),
+    )
+    notes = models.TextField(blank=True, default='')
+    location = models.ForeignKey(
+        StockLocation, on_delete=models.SET_NULL, null=True, blank=True,
+        help_text=_('Return destination (e.g. returns shelf, quarantine)'),
+    )
+    created_by = models.CharField(max_length=128, blank=True, default='system')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = _('Return')
+        verbose_name_plural = _('Returns')
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['tenant', 'status'], name='wws_return_tenant_status_idx'),
+        ]
+
+    def __str__(self):
+        part = self.product.IPN if self.product else 'N/A'
+        return f'Return #{self.id} — {part} ({self.status})'
+
+
+# ──────────────────────────────────────────────────────────────
+# Feature 5: Price Rules / Quantity-Based Pricing
+# ──────────────────────────────────────────────────────────────
+
+class PriceRule(TenantScopedModel):
+    """Quantity-based or customer-group-based pricing rules."""
+
+    class PriceProfile(models.TextChoices):
+        ENDKUNDE = 'endkunde', _('Endkunde')
+        WERKSTATT = 'werkstatt', _('Werkstatt')
+        HAENDLER = 'haendler', _('Händler / B2B')
+        PARTNER = 'partner', _('Partner')
+
+    product = models.ForeignKey(
+        Product, on_delete=models.CASCADE, related_name='price_rules', db_index=True,
+    )
+    profile = models.CharField(
+        max_length=32, choices=PriceProfile.choices, default=PriceProfile.ENDKUNDE,
+    )
+    min_quantity = models.IntegerField(default=1, help_text=_('Minimum quantity for this price'))
+    price = models.DecimalField(max_digits=12, decimal_places=2)
+    discount_percent = models.DecimalField(
+        max_digits=5, decimal_places=2, default=Decimal('0.00'),
+        help_text=_('Alternative: percentage discount from sale_price'),
+    )
+    valid_from = models.DateField(null=True, blank=True)
+    valid_to = models.DateField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = _('Price Rule')
+        verbose_name_plural = _('Price Rules')
+        unique_together = ('tenant', 'product', 'profile', 'min_quantity')
+        ordering = ['product', 'profile', 'min_quantity']
+
+    def __str__(self):
+        return f'{self.product.IPN} — {self.profile} (≥{self.min_quantity}): {self.price}€'

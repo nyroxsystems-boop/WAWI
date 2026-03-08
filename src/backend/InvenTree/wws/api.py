@@ -22,25 +22,30 @@ from channels.models import Contact
 from tenancy.permissions import IsTenantOrServiceToken
 from .adapters import fetch_offers_for_connection
 from .models import (
-    DealerSupplierSetting, MerchantSettings, Offer, Order, Product,
-    PurchaseOrder, PurchaseOrderItem, StockItem, StockLocation,
-    StockMovement, Supplier, SupplierArticle, WwsConnection,
+    DealerSupplierSetting, MerchantSettings, OemCrossReference, Offer, Order,
+    PriceRule, Product, PurchaseOrder, PurchaseOrderItem, Return, StockItem,
+    StockLocation, StockMovement, Supplier, SupplierArticle,
+    VehicleApplication, WwsConnection,
 )
 from .serializers import (
     DealerSupplierSettingSerializer,
+    OemCrossReferenceSerializer,
     OfferCreateSerializer,
     OfferSerializer,
     OrderCreateSerializer,
     OrderSerializer,
+    PriceRuleSerializer,
     ProductSerializer,
     ProductListSerializer,
     PurchaseOrderSerializer,
     PurchaseOrderCreateSerializer,
     PurchaseOrderItemSerializer,
+    ReturnSerializer,
     StockLocationSerializer,
     StockMovementSerializer,
     SupplierArticleSerializer,
     SupplierSerializer,
+    VehicleApplicationSerializer,
     WwsConnectionSerializer,
 )
 
@@ -1050,6 +1055,377 @@ class PurchaseOrderViewSet(TenantScopedViewSet):
 
 
 # ──────────────────────────────────────────────────────────────
+# Feature 1: OEM Cross-Reference ViewSet
+# ──────────────────────────────────────────────────────────────
+
+class OemCrossReferenceViewSet(viewsets.ModelViewSet):
+    """CRUD for OEM cross-references. Search by OEM number across all products."""
+
+    permission_classes = [IsTenantOrServiceToken]
+    serializer_class = OemCrossReferenceSerializer
+    queryset = OemCrossReference.objects.select_related('product')
+    pagination_class = WaWiPagination
+
+    def get_queryset(self):
+        tenant = getattr(self.request, 'tenant', None)
+        if not tenant:
+            return self.queryset.none()
+        qs = self.queryset.filter(tenant=tenant)
+        product_id = self.request.query_params.get('product')
+        if product_id:
+            qs = qs.filter(product_id=product_id)
+        brand = self.request.query_params.get('brand')
+        if brand:
+            qs = qs.filter(brand__icontains=brand)
+        return qs
+
+    def get_serializer_context(self):
+        ctx = super().get_serializer_context()
+        ctx['tenant'] = getattr(self.request, 'tenant', None)
+        return ctx
+
+    def perform_create(self, serializer):
+        serializer.save(tenant=getattr(self.request, 'tenant', None))
+
+    @action(detail=False, methods=['get'], url_path='search')
+    def search_by_oem(self, request):
+        """Search products by OEM number — resolves cross-references.
+
+        GET /api/oem-cross-refs/search/?q=DF6134
+        Returns the product(s) that match this OEM, plus the cross-ref details.
+        """
+        q = request.query_params.get('q', '').strip()
+        if not q:
+            return Response([])
+        tenant = getattr(request, 'tenant', None)
+        if not tenant:
+            return Response([])
+
+        # Search in cross-references
+        xrefs = OemCrossReference.objects.filter(
+            tenant=tenant, oem_number__icontains=q
+        ).select_related('product')[:20]
+
+        # Also search in Product.IPN directly
+        direct = Product.objects.filter(
+            tenant=tenant, IPN__icontains=q
+        )[:20]
+
+        results = []
+        seen_product_ids = set()
+
+        for xref in xrefs:
+            if xref.product_id not in seen_product_ids:
+                seen_product_ids.add(xref.product_id)
+                results.append({
+                    'product': ProductListSerializer(xref.product).data,
+                    'matched_via': 'cross_reference',
+                    'matched_oem': xref.oem_number,
+                    'matched_brand': xref.brand,
+                })
+
+        for p in direct:
+            if p.id not in seen_product_ids:
+                seen_product_ids.add(p.id)
+                results.append({
+                    'product': ProductListSerializer(p).data,
+                    'matched_via': 'direct_ipn',
+                    'matched_oem': p.IPN,
+                    'matched_brand': p.brand,
+                })
+
+        return Response(results)
+
+
+# ──────────────────────────────────────────────────────────────
+# Feature 3: Vehicle Application ViewSet
+# ──────────────────────────────────────────────────────────────
+
+class VehicleApplicationViewSet(viewsets.ModelViewSet):
+    """CRUD for vehicle-to-product fitment data."""
+
+    permission_classes = [IsTenantOrServiceToken]
+    serializer_class = VehicleApplicationSerializer
+    queryset = VehicleApplication.objects.select_related('product')
+    pagination_class = WaWiPagination
+
+    def get_queryset(self):
+        tenant = getattr(self.request, 'tenant', None)
+        if not tenant:
+            return self.queryset.none()
+        qs = self.queryset.filter(tenant=tenant)
+        product_id = self.request.query_params.get('product')
+        if product_id:
+            qs = qs.filter(product_id=product_id)
+        make = self.request.query_params.get('make')
+        if make:
+            qs = qs.filter(make__icontains=make)
+        model_param = self.request.query_params.get('model')
+        if model_param:
+            qs = qs.filter(model__icontains=model_param)
+        return qs
+
+    def get_serializer_context(self):
+        ctx = super().get_serializer_context()
+        ctx['tenant'] = getattr(self.request, 'tenant', None)
+        return ctx
+
+    def perform_create(self, serializer):
+        serializer.save(tenant=getattr(self.request, 'tenant', None))
+
+    @action(detail=False, methods=['get'], url_path='search')
+    def search_by_vehicle(self, request):
+        """Find parts for a vehicle.
+
+        GET /api/vehicle-applications/search/?hsn=0603&tsn=BKP
+        GET /api/vehicle-applications/search/?make=VW&model=Golf
+        """
+        tenant = getattr(request, 'tenant', None)
+        if not tenant:
+            return Response([])
+
+        qs = VehicleApplication.objects.filter(tenant=tenant).select_related('product')
+
+        hsn = request.query_params.get('hsn', '').strip()
+        tsn = request.query_params.get('tsn', '').strip()
+        make = request.query_params.get('make', '').strip()
+        model_param = request.query_params.get('model', '').strip()
+
+        if hsn:
+            qs = qs.filter(kba_hsn__icontains=hsn)
+        if tsn:
+            qs = qs.filter(kba_tsn__icontains=tsn)
+        if make:
+            qs = qs.filter(make__icontains=make)
+        if model_param:
+            qs = qs.filter(model__icontains=model_param)
+
+        results = []
+        for va in qs[:50]:
+            results.append({
+                'product': ProductListSerializer(va.product).data,
+                'vehicle': VehicleApplicationSerializer(va).data,
+            })
+        return Response(results)
+
+
+# ──────────────────────────────────────────────────────────────
+# Feature 2: Returns Management ViewSet
+# ──────────────────────────────────────────────────────────────
+
+class ReturnViewSet(viewsets.ModelViewSet):
+    """CRUD for returns with workflow actions."""
+
+    permission_classes = [IsTenantOrServiceToken]
+    serializer_class = ReturnSerializer
+    queryset = Return.objects.select_related('product', 'contact', 'order', 'location')
+    pagination_class = WaWiPagination
+
+    def get_queryset(self):
+        tenant = getattr(self.request, 'tenant', None)
+        if not tenant:
+            return self.queryset.none()
+        qs = self.queryset.filter(tenant=tenant)
+        status_filter = self.request.query_params.get('status')
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+        return qs
+
+    def get_serializer_context(self):
+        ctx = super().get_serializer_context()
+        ctx['tenant'] = getattr(self.request, 'tenant', None)
+        return ctx
+
+    def perform_create(self, serializer):
+        user = self.request.user
+        serializer.save(
+            tenant=getattr(self.request, 'tenant', None),
+            created_by=user.username if user.is_authenticated else 'system',
+        )
+
+    @action(detail=True, methods=['post'])
+    def approve(self, request, pk=None):
+        """Approve a return request."""
+        ret = self.get_object()
+        if ret.status != 'requested':
+            return Response({'detail': 'Can only approve requested returns.'}, status=status.HTTP_400_BAD_REQUEST)
+        ret.status = 'approved'
+        ret.save(update_fields=['status', 'updated_at'])
+        return Response(ReturnSerializer(ret).data)
+
+    @action(detail=True, methods=['post'])
+    def receive(self, request, pk=None):
+        """Mark return as received and optionally restock."""
+        ret = self.get_object()
+        if ret.status not in ('approved', 'requested'):
+            return Response({'detail': 'Return must be approved first.'}, status=status.HTTP_400_BAD_REQUEST)
+        ret.status = 'received'
+        ret.save(update_fields=['status', 'updated_at'])
+
+        # Optionally restock if product and location provided
+        restock = request.data.get('restock', False)
+        if restock and ret.product and ret.location:
+            tenant = getattr(request, 'tenant', None)
+            stock_item, _ = StockItem.objects.get_or_create(
+                tenant=tenant, product=ret.product, location=ret.location,
+                defaults={'quantity': 0}
+            )
+            stock_item.quantity += ret.quantity
+            stock_item.save()
+            StockMovement.objects.create(
+                tenant=tenant,
+                product=ret.product,
+                type='IN',
+                quantity=ret.quantity,
+                to_location=ret.location,
+                reference=f'Return #{ret.id}',
+                notes=f'Restock from return: {ret.reason}',
+                created_by=request.user.username if request.user.is_authenticated else 'system',
+            )
+
+        return Response(ReturnSerializer(ret).data)
+
+    @action(detail=True, methods=['post'])
+    def refund(self, request, pk=None):
+        """Mark return as refunded. Optionally create a credit note."""
+        ret = self.get_object()
+        if ret.status not in ('received', 'inspected'):
+            return Response({'detail': 'Return must be received first.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        refund_amount = request.data.get('refund_amount')
+        if refund_amount is not None:
+            ret.refund_amount = refund_amount
+
+        ret.status = 'refunded'
+        ret.save(update_fields=['status', 'refund_amount', 'updated_at'])
+
+        # Create credit note invoice if requested
+        create_credit = request.data.get('create_credit_note', False)
+        credit_note = None
+        if create_credit and ret.refund_amount > 0:
+            tenant = getattr(request, 'tenant', None)
+            from decimal import Decimal
+            credit_note = Invoice.objects.create(
+                tenant=tenant,
+                order=ret.order,
+                contact=ret.contact,
+                invoice_type='credit_note',
+                status='ISSUED',
+                currency='EUR',
+            )
+            InvoiceLine.objects.create(
+                tenant=tenant,
+                invoice=credit_note,
+                description=f'Gutschrift: Return #{ret.id}',
+                quantity=ret.quantity,
+                unit_price=-abs(ret.refund_amount),
+                tax_rate=0,
+            )
+            credit_note.recalculate_totals()
+            credit_note.save()
+
+        data = ReturnSerializer(ret).data
+        if credit_note:
+            data['credit_note_id'] = credit_note.id
+        return Response(data)
+
+    @action(detail=True, methods=['post'])
+    def reject(self, request, pk=None):
+        """Reject a return request."""
+        ret = self.get_object()
+        ret.status = 'rejected'
+        ret.notes = request.data.get('reason', ret.notes)
+        ret.save(update_fields=['status', 'notes', 'updated_at'])
+        return Response(ReturnSerializer(ret).data)
+
+
+# ──────────────────────────────────────────────────────────────
+# Feature 5: Price Rules ViewSet
+# ──────────────────────────────────────────────────────────────
+
+class PriceRuleViewSet(viewsets.ModelViewSet):
+    """CRUD for quantity/profile-based pricing rules."""
+
+    permission_classes = [IsTenantOrServiceToken]
+    serializer_class = PriceRuleSerializer
+    queryset = PriceRule.objects.select_related('product')
+    pagination_class = WaWiPagination
+
+    def get_queryset(self):
+        tenant = getattr(self.request, 'tenant', None)
+        if not tenant:
+            return self.queryset.none()
+        qs = self.queryset.filter(tenant=tenant)
+        product_id = self.request.query_params.get('product')
+        if product_id:
+            qs = qs.filter(product_id=product_id)
+        profile = self.request.query_params.get('profile')
+        if profile:
+            qs = qs.filter(profile=profile)
+        return qs
+
+    def get_serializer_context(self):
+        ctx = super().get_serializer_context()
+        ctx['tenant'] = getattr(self.request, 'tenant', None)
+        return ctx
+
+    def perform_create(self, serializer):
+        serializer.save(tenant=getattr(self.request, 'tenant', None))
+
+    @action(detail=False, methods=['get'], url_path='calculate')
+    def calculate_price(self, request):
+        """Calculate the best price for a product given quantity and profile.
+
+        GET /api/price-rules/calculate/?product=5&quantity=10&profile=werkstatt
+        """
+        tenant = getattr(request, 'tenant', None)
+        if not tenant:
+            return Response({'detail': 'Tenant required'}, status=status.HTTP_403_FORBIDDEN)
+
+        product_id = request.query_params.get('product')
+        quantity = int(request.query_params.get('quantity', 1))
+        profile = request.query_params.get('profile', 'endkunde')
+
+        if not product_id:
+            return Response({'detail': 'product parameter required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        product = Product.objects.filter(tenant=tenant, id=product_id).first()
+        if not product:
+            return Response({'detail': 'Product not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        from django.utils import timezone
+        today = timezone.now().date()
+
+        # Find best matching price rule
+        rule = PriceRule.objects.filter(
+            tenant=tenant, product=product, profile=profile,
+            min_quantity__lte=quantity,
+        ).filter(
+            models.Q(valid_from__isnull=True) | models.Q(valid_from__lte=today),
+        ).filter(
+            models.Q(valid_to__isnull=True) | models.Q(valid_to__gte=today),
+        ).order_by('-min_quantity').first()
+
+        if rule:
+            if rule.discount_percent > 0:
+                final_price = float(product.sale_price) * (1 - float(rule.discount_percent) / 100)
+            else:
+                final_price = float(rule.price)
+        else:
+            final_price = float(product.sale_price)
+
+        return Response({
+            'product_id': product.id,
+            'product_ipn': product.IPN,
+            'profile': profile,
+            'quantity': quantity,
+            'base_price': float(product.sale_price),
+            'final_price': round(final_price, 2),
+            'rule_applied': PriceRuleSerializer(rule).data if rule else None,
+        })
+
+
+# ──────────────────────────────────────────────────────────────
 # Routers and URL patterns
 # ──────────────────────────────────────────────────────────────
 
@@ -1060,12 +1436,17 @@ router.register('orders', OrderViewSet, basename='wws-orders')
 router.register('offers', OfferViewSet, basename='wws-offers')
 router.register('suppliers', SupplierViewSet, basename='wws-suppliers')
 router.register('wws-connections', WwsConnectionViewSet, basename='wws-connections')
-# New inventory endpoints
+# Inventory
 router.register('products', ProductViewSet, basename='wws-products')
 router.register('stock-locations', StockLocationViewSet, basename='wws-stock-locations')
 router.register('stock-movements', StockMovementViewSet, basename='wws-stock-movements')
 router.register('supplier-articles', SupplierArticleViewSet, basename='wws-supplier-articles')
 router.register('purchase-orders', PurchaseOrderViewSet, basename='wws-purchase-orders')
+# New features
+router.register('oem-cross-refs', OemCrossReferenceViewSet, basename='wws-oem-cross-refs')
+router.register('vehicle-applications', VehicleApplicationViewSet, basename='wws-vehicle-applications')
+router.register('returns', ReturnViewSet, basename='wws-returns')
+router.register('price-rules', PriceRuleViewSet, basename='wws-price-rules')
 
 api_urls = [
     path('', include(router.urls)),

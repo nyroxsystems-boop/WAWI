@@ -45,6 +45,14 @@ class Invoice(TenantScopedModel):
         PAID = 'PAID', 'PAID'
         CANCELED = 'CANCELED', 'CANCELED'
 
+    class InvoiceType(models.TextChoices):
+        INVOICE = 'invoice', _('Invoice')
+        CREDIT_NOTE = 'credit_note', _('Credit Note / Gutschrift')
+
+    invoice_type = models.CharField(
+        max_length=20, choices=InvoiceType.choices, default=InvoiceType.INVOICE,
+        help_text=_('invoice or credit_note (Gutschrift)'),
+    )
     invoice_number = models.CharField(max_length=50, blank=True, null=True, db_index=True)
     status = models.CharField(
         max_length=20, choices=Status.choices, default=Status.DRAFT, db_index=True
@@ -110,7 +118,8 @@ class Invoice(TenantScopedModel):
             if seq.yearly_reset and seq.last_reset_year != year:
                 seq.next_number = 1
                 seq.last_reset_year = year
-            number = f"{seq.prefix}{year}-{seq.next_number:0{seq.padding}d}"
+            prefix = 'GS-' if self.invoice_type == 'credit_note' else seq.prefix
+            number = f"{prefix}{year}-{seq.next_number:0{seq.padding}d}"
             seq.next_number += 1
             seq.save()
         self.invoice_number = number
@@ -233,7 +242,7 @@ class Invoice(TenantScopedModel):
                     </div>
                 </div>
                 <div style="text-align: {num_pos}">
-                    <div class="invoice-title">RECHNUNG</div>
+                    <div class="invoice-title">{'GUTSCHRIFT' if self.invoice_type == 'credit_note' else 'RECHNUNG'}</div>
                     <span style="font-size: 11pt; font-weight: bold;">{self.invoice_number or 'ENTWURF'}</span><br>
                     Datum: {self.issue_date or timezone.now().date()}
                 </div>
