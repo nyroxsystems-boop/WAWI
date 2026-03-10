@@ -90,7 +90,12 @@ class TenantUser(models.Model):
 class TenantScopedModel(models.Model):
     """Abstract base for tenant-scoped entities."""
 
-    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, db_index=True)
+    tenant = models.ForeignKey(
+        Tenant,
+        on_delete=models.CASCADE,
+        db_index=True,
+        related_name='%(app_label)s_%(class)s_set',
+    )
 
     # Automatically tenant-filtered queryset
     objects = TenantManager()
