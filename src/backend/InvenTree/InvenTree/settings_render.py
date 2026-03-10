@@ -118,6 +118,10 @@ else:
 _cors_origins = [
     'https://autoteile-dashboard.onrender.com',
     'https://wawi-new.onrender.com',
+    'https://app.partsunion.de',
+    'https://admin.partsunion.de',
+    'https://partsunion.de',
+    'https://www.partsunion.de',
     'http://localhost:5173',
     'http://localhost:4173',
     'http://127.0.0.1:5173',
@@ -149,6 +153,8 @@ CORS_ALLOW_HEADERS = [
     'expires',
     'x-requested-with',
     'x-csrftoken',
+    'x-device-id',
+    'x-tenant-id',
 ]
 
 CORS_ALLOW_METHODS = [
