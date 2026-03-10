@@ -1,5 +1,8 @@
 """API endpoints for tenancy and authentication."""
 
+import os
+
+from django.conf import settings as django_settings
 from django.contrib.auth import authenticate
 from django.urls import path
 
@@ -14,6 +17,35 @@ from rest_framework_simplejwt.views import TokenRefreshView
 from audit.utils import log_audit
 from tenancy.models import TenantUser, TenantDevice
 from tenancy.serializers import TenantLoginSerializer, TenantMembershipSerializer
+
+# httpOnly cookie settings
+_SECURE = not getattr(django_settings, 'DEBUG', True)
+_SAMESITE = 'Lax'
+_ACCESS_MAX_AGE = 60 * 60  # 1 hour
+_REFRESH_MAX_AGE = 60 * 60 * 24 * 7  # 7 days
+
+
+def _set_auth_cookies(response, access, refresh=None):
+    """Set httpOnly cookies for access and optionally refresh token."""
+    response.set_cookie(
+        'access_token', access,
+        max_age=_ACCESS_MAX_AGE, httponly=True, secure=_SECURE,
+        samesite=_SAMESITE, path='/'
+    )
+    if refresh:
+        response.set_cookie(
+            'refresh_token', refresh,
+            max_age=_REFRESH_MAX_AGE, httponly=True, secure=_SECURE,
+            samesite=_SAMESITE, path='/api/auth/'
+        )
+    return response
+
+
+def _clear_auth_cookies(response):
+    """Clear httpOnly auth cookies."""
+    response.delete_cookie('access_token', path='/')
+    response.delete_cookie('refresh_token', path='/api/auth/')
+    return response
 
 
 def _issue_tokens(user, tenant, role, membership, device_id=None):
@@ -80,7 +112,7 @@ class TenantLoginView(APIView):
 
         log_audit('LOGIN', tenant=tenant, actor=user, metadata={'role': role, 'device_id': device_id})
 
-        return Response({
+        response = Response({
             'access': access,
             'refresh': refresh,
             'tenant': {
@@ -95,6 +127,7 @@ class TenantLoginView(APIView):
                 'email': user.email,
             },
         })
+        return _set_auth_cookies(response, access, refresh)
 
 
 class TenantTokenRefreshView(TokenRefreshView):
@@ -102,6 +135,18 @@ class TenantTokenRefreshView(TokenRefreshView):
 
     permission_classes = [AllowAny]
     authentication_classes = []
+
+    def post(self, request, *args, **kwargs):
+        """Override to also set httpOnly cookie on refresh."""
+        # If refresh token is in cookie but not in body, inject it
+        if not request.data.get('refresh'):
+            cookie_refresh = request.COOKIES.get('refresh_token')
+            if cookie_refresh:
+                request.data['refresh'] = cookie_refresh
+        response = super().post(request, *args, **kwargs)
+        if response.status_code == 200 and 'access' in response.data:
+            _set_auth_cookies(response, response.data['access'])
+        return response
 
 
 class TenantLogoutView(APIView):
@@ -133,7 +178,8 @@ class TenantLogoutView(APIView):
         except TokenError:
             return Response({'detail': 'Invalid refresh token'}, status=status.HTTP_400_BAD_REQUEST)
 
-        return Response(status=status.HTTP_205_RESET_CONTENT)
+        response = Response(status=status.HTTP_205_RESET_CONTENT)
+        return _clear_auth_cookies(response)
 
 
 class MyTenantsView(APIView):

@@ -63,6 +63,30 @@ class TenantJWTAuthentication(JWTAuthentication):
         set_current_tenant(tenant)
 
 
+class CookieJWTAuthentication(TenantJWTAuthentication):
+    """Fallback: read JWT from httpOnly `access_token` cookie when no Authorization header."""
+
+    def authenticate(self, request):
+        """Try Authorization header first (via parent), then fall back to cookie."""
+        # If there's already an Authorization header, let parent handle it
+        auth_header = request.META.get('HTTP_AUTHORIZATION', '')
+        if auth_header:
+            return super().authenticate(request)
+
+        raw_token = request.COOKIES.get('access_token')
+        if not raw_token:
+            return None
+
+        try:
+            validated_token = self.get_validated_token(raw_token)
+        except Exception:
+            return None
+
+        user = self.get_user(validated_token)
+        self._attach_tenant(request, validated_token)
+        return (user, validated_token)
+
+
 class ServiceTokenAuthentication(authentication.BaseAuthentication):
     """Authenticate requests using a service token."""
 

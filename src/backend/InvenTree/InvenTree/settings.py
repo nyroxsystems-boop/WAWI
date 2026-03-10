@@ -604,6 +604,7 @@ REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'tenancy.authentication.ServiceTokenAuthentication',
         'tenancy.authentication.TenantJWTAuthentication',
+        'tenancy.authentication.CookieJWTAuthentication',
         'users.authentication.ApiTokenAuthentication',
         'rest_framework.authentication.BasicAuthentication',
         'rest_framework.authentication.SessionAuthentication',
