@@ -1194,8 +1194,8 @@ for i, host in enumerate(ALLOWED_HOSTS):
     if ':' in host:
         ALLOWED_HOSTS[i] = host = host.split(':')[0]
 
-if '.euredomain.de' not in ALLOWED_HOSTS:
-    ALLOWED_HOSTS.append('.euredomain.de')
+if '.partsunion.de' not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append('.partsunion.de')
 
 # List of trusted origins for unsafe requests
 # Ref: https://docs.djangoproject.com/en/4.2/ref/settings/#csrf-trusted-origins
@@ -1221,8 +1221,8 @@ if DEBUG:
         if origin not in CSRF_TRUSTED_ORIGINS:
             CSRF_TRUSTED_ORIGINS.append(origin)
 
-if 'https://*.euredomain.de' not in CSRF_TRUSTED_ORIGINS:
-    CSRF_TRUSTED_ORIGINS.append('https://*.euredomain.de')
+if 'https://*.partsunion.de' not in CSRF_TRUSTED_ORIGINS:
+    CSRF_TRUSTED_ORIGINS.append('https://*.partsunion.de')
 for dev_origin in ['http://localhost', 'http://127.0.0.1']:
     if dev_origin not in ALLOWED_HOSTS:
         ALLOWED_HOSTS.append(dev_origin)
