@@ -23,6 +23,10 @@ if [ -n "$DJANGO_SUPERUSER_PASSWORD" ] && [ -n "$DJANGO_SUPERUSER_USERNAME" ]; t
         --username "$DJANGO_SUPERUSER_USERNAME" \
         --email "${DJANGO_SUPERUSER_EMAIL:-admin@partsunion.de}" \
         2>&1 || echo "Superuser already exists or creation failed"
+
+    # Generate/refresh DRF API token for the superuser
+    echo "Generating API token for '${DJANGO_SUPERUSER_USERNAME}'..."
+    python manage.py drf_create_token "$DJANGO_SUPERUSER_USERNAME" 2>&1 || echo "Token generation failed (may already exist)"
 fi
 
 echo "=== Starting Gunicorn ==="
