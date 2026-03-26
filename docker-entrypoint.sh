@@ -23,12 +23,16 @@ if [ -n "$DJANGO_SUPERUSER_PASSWORD" ] && [ -n "$DJANGO_SUPERUSER_USERNAME" ]; t
         --username "$DJANGO_SUPERUSER_USERNAME" \
         --email "${DJANGO_SUPERUSER_EMAIL:-admin@partsunion.de}" \
         2>&1 || echo "Superuser already exists or creation failed"
-
-    # Generate InvenTree ApiToken (with inv- prefix, 10-year expiry)
-    echo "=== Generating API Token ==="
-    python manage.py create_api_token "$DJANGO_SUPERUSER_USERNAME" --name bot-service --days 3650 2>&1
-    echo "=== Copy the TOKEN= line above into your bot service INVENTREE_API_TOKEN env var ==="
 fi
+
+# ALWAYS generate API token (auto-finds first superuser in DB)
+echo "============================================"
+echo "=== Generating API Token (bot-service)   ==="
+echo "============================================"
+python manage.py create_api_token --name bot-service --days 3650 2>&1 || echo "WARNING: Token generation failed"
+echo "============================================"
+echo "Copy the TOKEN= value above into your bot service INVENTREE_API_TOKEN env var"
+echo "============================================"
 
 echo "=== Starting Gunicorn ==="
 exec gunicorn -b 0.0.0.0:8000 --workers 2 --timeout 120 InvenTree.wsgi:application
