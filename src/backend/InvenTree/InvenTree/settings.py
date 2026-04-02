@@ -1223,11 +1223,14 @@ if DEBUG:
 
 if 'https://*.partsunion.de' not in CSRF_TRUSTED_ORIGINS:
     CSRF_TRUSTED_ORIGINS.append('https://*.partsunion.de')
-for dev_origin in ['http://localhost', 'http://127.0.0.1']:
-    if dev_origin not in ALLOWED_HOSTS:
-        ALLOWED_HOSTS.append(dev_origin)
-    if dev_origin not in CSRF_TRUSTED_ORIGINS:
-        CSRF_TRUSTED_ORIGINS.append(dev_origin)
+
+# Only add localhost origins in DEBUG mode
+if DEBUG:
+    for dev_origin in ['http://localhost', 'http://127.0.0.1']:
+        if dev_origin not in ALLOWED_HOSTS:
+            ALLOWED_HOSTS.append(dev_origin)
+        if dev_origin not in CSRF_TRUSTED_ORIGINS:
+            CSRF_TRUSTED_ORIGINS.append(dev_origin)
 
 if (
     not TESTING and len(CSRF_TRUSTED_ORIGINS) == 0 and isInMainThread()
@@ -1278,8 +1281,9 @@ SESSION_COOKIE_SECURE = COOKIE_SECURE
 LANGUAGE_COOKIE_SECURE = COOKIE_SECURE
 
 # Ref: https://docs.djangoproject.com/en/4.2/ref/settings/#std-setting-SECURE_PROXY_SSL_HEADER
+# Default to True for Railway/reverse-proxy deployments
 if ssl_header := get_boolean_setting(
-    'INVENTREE_USE_X_FORWARDED_PROTO', 'use_x_forwarded_proto', False
+    'INVENTREE_USE_X_FORWARDED_PROTO', 'use_x_forwarded_proto', not DEBUG
 ):
     # The default header name is 'HTTP_X_FORWARDED_PROTO', but can be adjusted
     ssl_header_name = get_setting(

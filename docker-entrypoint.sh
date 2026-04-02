@@ -3,13 +3,13 @@ set -e
 
 echo "=== WaWi Startup ==="
 
-# Generate any missing migration files (for new models)
-echo "Generating migrations..."
-python manage.py makemigrations --noinput 2>&1 || echo "WARNING: makemigrations failed"
-
-# Run database migrations
+# Run database migrations (migrations should be committed to git, not auto-generated)
 echo "Running migrations..."
-python manage.py migrate --noinput 2>&1 || echo "WARNING: Migrations failed (DB might not be ready yet)"
+python manage.py migrate --noinput 2>&1 || {
+    echo "ERROR: Migrations failed. Retrying in 5 seconds..."
+    sleep 5
+    python manage.py migrate --noinput 2>&1 || echo "WARNING: Migrations failed after retry"
+}
 
 # Collect static files
 echo "Collecting static files..."
@@ -25,14 +25,17 @@ if [ -n "$DJANGO_SUPERUSER_PASSWORD" ] && [ -n "$DJANGO_SUPERUSER_USERNAME" ]; t
         2>&1 || echo "Superuser already exists or creation failed"
 fi
 
-# ALWAYS generate API token (auto-finds first superuser in DB)
+# Generate API token for bot-service (auto-finds first superuser)
 echo "============================================"
 echo "=== Generating API Token (bot-service)   ==="
 echo "============================================"
 python manage.py create_api_token --name bot-service --days 3650 2>&1 || echo "WARNING: Token generation failed"
 echo "============================================"
-echo "Copy the TOKEN= value above into your bot service INVENTREE_API_TOKEN env var"
-echo "============================================"
 
 echo "=== Starting Gunicorn ==="
-exec gunicorn -b 0.0.0.0:8000 --workers 2 --timeout 120 InvenTree.wsgi:application
+exec gunicorn -b 0.0.0.0:8000 \
+    --workers "${GUNICORN_WORKERS:-2}" \
+    --timeout "${GUNICORN_TIMEOUT:-120}" \
+    --access-logfile - \
+    --error-logfile - \
+    InvenTree.wsgi:application

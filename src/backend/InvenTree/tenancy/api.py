@@ -157,18 +157,19 @@ class TenantLogoutView(APIView):
 
     def post(self, request):
         """Invalidate provided refresh token if possible."""
-        token = request.data.get('refresh')
+        token = request.data.get('refresh') or request.COOKIES.get('refresh_token')
         if not token:
             return Response({'detail': 'Refresh token required'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             refresh = RefreshToken(token)
-            
-            # Remove device record
+
+            # Remove device record using claims from token (request.user may be anonymous)
             device_id = refresh.get('device_id')
             tenant_id = refresh.get('tenant_id')
-            if device_id and tenant_id:
-                TenantDevice.objects.filter(user=request.user, tenant_id=tenant_id, device_id=device_id).delete()
+            user_id = refresh.get('user_id')
+            if device_id and tenant_id and user_id:
+                TenantDevice.objects.filter(user_id=user_id, tenant_id=tenant_id, device_id=device_id).delete()
 
             try:
                 refresh.blacklist()
@@ -222,21 +223,29 @@ class MeView(APIView):
         })
 
     def patch(self, request):
-        """Update current user's profile fields."""
+        """Update current user's profile fields (whitelist-only)."""
         if not request.user.is_authenticated:
             return Response({'detail': 'Not authenticated'}, status=status.HTTP_401_UNAUTHORIZED)
 
         user = request.user
-        for field in ['first_name', 'last_name', 'email']:
+        allowed_fields = ['first_name', 'last_name', 'email']
+        updated = []
+        for field in allowed_fields:
             if field in request.data:
-                setattr(user, field, request.data[field])
-        user.save()
+                value = str(request.data[field]).strip()[:255]
+                setattr(user, field, value)
+                updated.append(field)
+        if updated:
+            user.save(update_fields=updated)
+            log_audit('PROFILE_UPDATED', tenant=getattr(request, 'tenant', None), actor=user, metadata={'fields': updated})
 
         return self.get(request)
 
 
 class ChangePasswordView(APIView):
     """Change current user's password."""
+
+    throttle_scope = 'auth'
 
     def post(self, request):
         if not request.user.is_authenticated:
@@ -249,6 +258,7 @@ class ChangePasswordView(APIView):
             return Response({'detail': 'Both current_password and new_password are required.'}, status=status.HTTP_400_BAD_REQUEST)
 
         if not request.user.check_password(current_password):
+            log_audit('PASSWORD_CHANGE_FAILED', tenant=getattr(request, 'tenant', None), actor=request.user)
             return Response({'detail': 'Current password is incorrect.'}, status=status.HTTP_400_BAD_REQUEST)
 
         if len(new_password) < 8:
@@ -256,6 +266,7 @@ class ChangePasswordView(APIView):
 
         request.user.set_password(new_password)
         request.user.save()
+        log_audit('PASSWORD_CHANGED', tenant=getattr(request, 'tenant', None), actor=request.user)
         return Response({'success': True})
 
 

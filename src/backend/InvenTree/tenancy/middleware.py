@@ -34,25 +34,11 @@ class SubdomainTenantMiddleware(MiddlewareMixin):
             logger.debug('tenant.resolve.bypass', extra={'host': host, 'reason': 'non-subdomain or platform deployment'})
             return None
 
-        # Allow selected public endpoints without tenant lookup
-        if request.path.startswith((
-            '/api/bot/health',
-            '/api/dashboard/',
-            '/api/wws-connections',
-            '/api/bot/inventory/by-oem',
-            '/api/products',
-            '/api/stock-',
-            '/api/purchase-orders',
-            '/api/supplier-articles',
-            '/api/suppliers',
-            '/api/orders',
-            '/api/offers',
-        )):
-            request.tenant = None
-            request.tenant_id = None
-            request.tenant_user = None
-            logger.debug('tenant.resolve.bypass', extra={'host': host, 'path': request.path})
-            return None
+        # NOTE: Tenant resolution from subdomain is skipped for platform
+        # deployments above. For subdomain hosts, do NOT bypass tenant lookup
+        # for API endpoints — they get their tenant from JWT/ServiceToken
+        # via TenantContextMiddleware instead. Only truly public endpoints
+        # (health checks) should bypass.
 
         slug = parts[0].lower()
         tenant = Tenant.objects.filter(slug=slug, status='active', is_active=True).first()

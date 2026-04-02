@@ -429,9 +429,8 @@ class BotHealth(APIView):
     permission_classes = [IsTenantOrServiceToken]
 
     def get(self, request):
-        """Return ok."""
-        tenant = getattr(request, 'tenant', None)
-        return Response({'status': 'ok', 'tenant_id': tenant.id if tenant else None})
+        """Return ok — do not leak tenant details."""
+        return Response({'status': 'ok'})
 
 
 class BotConfig(APIView):
