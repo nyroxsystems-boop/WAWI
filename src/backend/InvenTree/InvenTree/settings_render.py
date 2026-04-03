@@ -40,7 +40,7 @@ if 'DATABASE_URL' in os.environ:
     print(f"Configuring Database from DATABASE_URL: {os.environ['DATABASE_URL'].split('@')[-1]}") # Log safe part
     
     DATABASES['default'] = dj_database_url.config(
-        conn_max_age=0  # Disable pooling - fresh connection per request to avoid stale SSL connections
+        conn_max_age=int(os.environ.get('CONN_MAX_AGE', 60))  # Reuse connections for 60s (set 0 if SSL issues)
     )
     
     # Use standard PostgreSQL backend (django-tenants removed)

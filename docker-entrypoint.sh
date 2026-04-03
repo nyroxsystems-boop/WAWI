@@ -34,7 +34,7 @@ echo "============================================"
 
 echo "=== Starting Gunicorn ==="
 exec gunicorn -b 0.0.0.0:8000 \
-    --workers "${GUNICORN_WORKERS:-2}" \
+    --workers "${GUNICORN_WORKERS:-8}" \
     --timeout "${GUNICORN_TIMEOUT:-120}" \
     --access-logfile - \
     --error-logfile - \

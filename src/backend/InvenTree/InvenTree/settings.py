@@ -971,7 +971,7 @@ _q_worker_timeout = int(
 # Prevent running multiple background workers if global cache is disabled
 # This is to prevent scheduling conflicts due to the lack of a shared cache
 BACKGROUND_WORKER_COUNT = (
-    int(get_setting('INVENTREE_BACKGROUND_WORKERS', 'background.workers', 4))
+    int(get_setting('INVENTREE_BACKGROUND_WORKERS', 'background.workers', 8))
     if GLOBAL_CACHE_ENABLED
     else 1
 )
@@ -986,9 +986,9 @@ Q_CLUSTER = {
     'max_attempts': int(
         get_setting('INVENTREE_BACKGROUND_MAX_ATTEMPTS', 'background.max_attempts', 5)
     ),
-    'queue_limit': 50,
+    'queue_limit': int(get_setting('INVENTREE_BACKGROUND_QUEUE_LIMIT', 'background.queue_limit', 200)),
     'catch_up': False,
-    'bulk': 10,
+    'bulk': 20,
     'orm': 'default',
     'cache': 'default',
     'sync': False,
