@@ -66,16 +66,6 @@ print(
 print("### PROXY ENDPOINTS COMMIT 8b9ca7d ENABLED ###")
 
 
-def __whoami__(request):
-    return JsonResponse({
-        "urlconf_file": __file__,
-        "settings_module": os.environ.get("DJANGO_SETTINGS_MODULE"),
-        "root_urlconf": getattr(settings, "ROOT_URLCONF", None),
-        "debug": getattr(settings, "DEBUG", None),
-        "pythonpath": os.environ.get("PYTHONPATH"),
-        "config_file": os.environ.get("INVENTREE_CONFIG_FILE"),
-    })
-
 
 @csrf_exempt
 @require_http_methods(["GET", "OPTIONS"])
@@ -202,9 +192,6 @@ backendpatterns = [
 ]
 
 urlpatterns = []
-
-# Debug helper to confirm active urlconf
-urlpatterns += [path('__whoami__', __whoami__)]
 
 # Ops health probe (no auth)
 urlpatterns += [

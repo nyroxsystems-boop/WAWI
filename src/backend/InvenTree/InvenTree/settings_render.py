@@ -85,10 +85,10 @@ REST_FRAMEWORK['DEFAULT_AUTHENTICATION_CLASSES'] = [
     'rest_framework.authentication.SessionAuthentication',
 ]
 
-# Keep permissions open for now - Bot-Service doesn't have valid ServiceToken yet
-# TODO: Create proper ServiceToken and switch back to IsAuthenticated
+# Production: require authentication for all API endpoints
+# Bot-Service uses ServiceToken via Authorization header
 REST_FRAMEWORK['DEFAULT_PERMISSION_CLASSES'] = [
-    'rest_framework.permissions.AllowAny',  # Temporarily allow unauthenticated access
+    'rest_framework.permissions.IsAuthenticated',
 ]
 
 print(f"REST_FRAMEWORK AUTH CLASSES: {REST_FRAMEWORK['DEFAULT_AUTHENTICATION_CLASSES']}")
@@ -122,9 +122,6 @@ _cors_origins = [
     'https://admin.partsunion.de',
     'https://partsunion.de',
     'https://www.partsunion.de',
-    'http://localhost:5173',
-    'http://localhost:4173',
-    'http://127.0.0.1:5173',
 ]
 
 try:
@@ -138,9 +135,6 @@ CSRF_TRUSTED_ORIGINS = [
     'http://wawi-production.up.railway.app',
     'https://*.up.railway.app',
     'https://*.partsunion.de',
-    'http://localhost:5173',
-    'http://localhost:4173',
-    'http://127.0.0.1:5173',
 ]
 
 CORS_ALLOW_HEADERS = [
