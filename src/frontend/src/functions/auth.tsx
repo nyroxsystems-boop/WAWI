@@ -5,11 +5,11 @@ import {
 } from '@github/webauthn-json/browser-ponyfill';
 import { ApiEndpoints } from '@lib/enums/ApiEndpoints';
 import { apiUrl } from '@lib/functions/Api';
-import { type AuthProvider, FlowEnum } from '@lib/types/Auth';
+import { type AuthContext, type AuthProvider, type Flow, FlowEnum } from '@lib/types/Auth';
 import { t } from '@lingui/core/macro';
 import { notifications, showNotification } from '@mantine/notifications';
 import axios from 'axios';
-import type { AxiosRequestConfig } from 'axios';
+import type { AxiosRequestConfig, AxiosResponse } from 'axios';
 import type { Location, NavigateFunction } from 'react-router-dom';
 import { api, setApiDefaults } from '../App';
 import { useLocalState } from '../states/LocalState';
@@ -19,7 +19,44 @@ import { fetchGlobalStates } from '../states/states';
 import { showLoginNotification } from './notifications';
 import { generateUrl } from './urls';
 
-export function followRedirect(navigate: NavigateFunction, redirect: any) {
+interface RedirectState {
+  redirectUrl?: string;
+  queryParams?: Record<string, string>;
+}
+
+interface AuthApiError {
+  response?: {
+    status: number;
+    data: {
+      data?: { flows: Flow[] };
+      errors?: Array<{ message: string; param?: string }>;
+      meta?: { secret?: string };
+    };
+  };
+  status?: number;
+}
+
+interface TotpMeta {
+  totp_url: string;
+  secret: string;
+  [key: string]: unknown;
+}
+
+interface PasswordErrors {
+  new_password?: string | string[];
+  new_password2?: string | string[];
+  new_password1?: string | string[];
+  current_password?: string | string[];
+  error?: string | string[];
+  [key: string]: string | string[] | undefined;
+}
+
+export function followRedirect(navigate: NavigateFunction, redirect: RedirectState | string | undefined) {
+  if (typeof redirect === 'string') {
+    navigate(redirect);
+    return;
+  }
+
   let url = redirect?.redirectUrl ?? '/home';
 
   if (redirect?.queryParams) {
@@ -39,20 +76,20 @@ export function followRedirect(navigate: NavigateFunction, redirect: any) {
  * Source https://stackoverflow.com/questions/133925/javascript-post-request-like-a-form-submit/133997#133997
  */
 
-function post(path: string, params: any, method = 'post') {
+function post(path: string, params: Record<string, string | undefined>, method = 'post') {
   const form = document.createElement('form');
   form.method = method;
   form.action = path;
 
   for (const key in params) {
     if (
-      params.hasOwn?.(key) ||
+      Object.hasOwn(params, key) ||
       Object.prototype.hasOwnProperty.call(params, key)
     ) {
       const hiddenField = document.createElement('input');
       hiddenField.type = 'hidden';
       hiddenField.name = key;
-      hiddenField.value = params[key];
+      hiddenField.value = params[key] ?? '';
 
       form.appendChild(hiddenField);
     }
@@ -156,10 +193,10 @@ export async function doBasicLogin(
   }
   return success;
 
-  async function handlePossibleMFAError(err: any) {
-    setAuthContext(err.response.data?.data);
-    const mfa_flow = err.response.data.data.flows.find(
-      (flow: any) => flow.id == FlowEnum.MfaAuthenticate
+  async function handlePossibleMFAError(err: AuthApiError) {
+    setAuthContext(err.response?.data?.data as AuthContext | undefined);
+    const mfa_flow = err.response?.data?.data?.flows.find(
+      (flow: Flow) => flow.id == FlowEnum.MfaAuthenticate
     );
     if (mfa_flow?.is_pending) {
       setMfaContext(mfa_flow);
@@ -319,7 +356,7 @@ export function handleReset(
 
 export async function handleMfaLogin(
   navigate: NavigateFunction,
-  location: Location<any> | undefined,
+  location: Location<RedirectState | string | undefined> | undefined,
   values: { code: string; remember?: boolean },
   setError: (message: string | undefined) => void
 ) {
@@ -349,7 +386,7 @@ export async function handleMfaLogin(
         // MFA trust flow pending
       } else if (err?.response?.status == 401) {
         const mfa_trust = err.response.data.data.flows.find(
-          (flow: any) => flow.id == FlowEnum.MfaTrust
+          (flow: Flow) => flow.id == FlowEnum.MfaTrust
         );
         if (mfa_trust?.is_pending) {
           setAuthContext(err.response.data.data);
@@ -360,11 +397,11 @@ export async function handleMfaLogin(
           });
         }
       } else {
-        const errors = err.response?.data?.errors;
+        const errors: Array<{ message: string }> | undefined = err.response?.data?.errors;
         let msg = t`An error occurred`;
 
         if (errors) {
-          msg = errors.map((e: any) => e.message).join(', ');
+          msg = errors.map((e: { message: string }) => e.message).join(', ');
         }
         setError(msg);
       }
@@ -381,8 +418,8 @@ export async function handleMfaLogin(
  * - An existing CSRF cookie is stored in the browser
  */
 export const checkLoginState = async (
-  navigate: any,
-  redirect?: any,
+  navigate: NavigateFunction,
+  redirect?: RedirectState | string,
   no_redirect?: boolean
 ) => {
   const { setLoginChecked } = useUserState.getState();
@@ -428,9 +465,9 @@ export const checkLoginState = async (
 };
 
 function handleSuccessFullAuth(
-  response?: any,
+  response?: AxiosResponse,
   navigate?: NavigateFunction,
-  location?: Location<any>,
+  location?: Location<RedirectState | string | undefined>,
   setError?: (message: string | undefined) => void
 ) {
   const { setAuthenticated, fetchUserState } = useUserState.getState();
@@ -441,8 +478,8 @@ function handleSuccessFullAuth(
     setError(undefined);
   }
 
-  if (response.data?.data) {
-    setAuthContext(response.data?.data);
+  if (response?.data?.data) {
+    setAuthContext(response.data.data);
   }
   setAuthenticated();
 
@@ -502,7 +539,7 @@ export function authApi(
   url: string,
   config: AxiosRequestConfig | undefined = undefined,
   method: 'get' | 'patch' | 'post' | 'put' | 'delete' = 'get',
-  data?: any
+  data?: Record<string, unknown>
 ) {
   const requestConfig = config || {};
 
@@ -518,7 +555,7 @@ export function authApi(
   return api(url, requestConfig);
 }
 
-export const getTotpSecret = async (setTotpQr: any) => {
+export const getTotpSecret = async (setTotpQr: (meta: TotpMeta) => void) => {
   await authApi(apiUrl(ApiEndpoints.auth_totp), undefined, 'get').catch(
     (err) => {
       if (err.status == 404 && err.response.data.meta.secret) {
@@ -538,7 +575,7 @@ export const getTotpSecret = async (setTotpQr: any) => {
 export function handleVerifyTotp(
   value: string,
   navigate: NavigateFunction,
-  location: Location<any>
+  location: Location<RedirectState | string | undefined>
 ) {
   return () => {
     authApi(apiUrl(ApiEndpoints.auth_totp), undefined, 'post', {
@@ -564,10 +601,10 @@ export function handlePasswordReset(
     navigate('/login');
   }
 
-  function passwordError(values: any) {
+  function passwordError(values: { errors?: Array<{ message: string }> }) {
     notifications.show({
       title: t`Reset failed`,
-      message: values?.errors.map((e: any) => e.message).join('\n'),
+      message: values?.errors?.map((e: { message: string }) => e.message).join('\n') ?? t`Unknown error`,
       color: 'red'
     });
   }
@@ -624,8 +661,8 @@ export function handleChangePassword(
 ) {
   const { clearUserState } = useUserState.getState();
 
-  function passwordError(values: any) {
-    let message: any =
+  function passwordError(values: PasswordErrors) {
+    let message: string | string[] =
       values?.new_password ||
       values?.new_password2 ||
       values?.new_password1 ||
@@ -689,7 +726,7 @@ export function handleChangePassword(
 
 export async function handleWebauthnLogin(
   navigate?: NavigateFunction,
-  location?: Location<any>
+  location?: Location<RedirectState | string | undefined>
 ) {
   const { setAuthContext } = useServerApiState.getState();
 
@@ -724,7 +761,7 @@ export async function handleWebauthnLogin(
       .catch((err) => {
         if (err?.response?.status == 401) {
           const mfa_trust = err.response.data.data.flows.find(
-            (flow: any) => flow.id == FlowEnum.MfaTrust
+            (flow: Flow) => flow.id == FlowEnum.MfaTrust
           );
           if (mfa_trust?.is_pending) {
             setAuthContext(err.response.data.data);

@@ -39,6 +39,94 @@ import { useGlobalSettingsState } from '../states/SettingsStates';
 import { RenderPartColumn } from '../tables/ColumnRenderers';
 
 /**
+ * Shared part detail shape used across build forms.
+ */
+interface PartDetail {
+  pk?: number;
+  trackable?: boolean;
+  default_location?: number | null;
+  IPN?: string;
+  units?: string;
+}
+
+/**
+ * Record shape returned when selecting a part in the part field.
+ * Contains location defaults used to pre-fill the destination field.
+ */
+interface PartRecord {
+  default_location?: number | null;
+  category_default_location?: number | null;
+}
+
+/**
+ * Core build order fields accessed throughout these forms.
+ */
+interface BuildOrder {
+  pk: number;
+  part?: number;
+  part_detail?: PartDetail;
+  quantity?: number;
+  completed?: number;
+  location?: number | null;
+  destination?: number | null;
+  take_from?: number | null;
+}
+
+/**
+ * A single build output (stock item produced by a build).
+ */
+interface BuildOutput {
+  pk: number;
+  quantity: number;
+  serial?: string;
+  batch?: string;
+  status: string | number;
+  part_detail?: PartDetail;
+}
+
+/**
+ * A build line item representing a BOM row for a build order.
+ */
+interface BuildLineItem {
+  pk: number;
+  bom_item?: number;
+  part_detail?: PartDetail;
+  allocatedQuantity: number;
+  requiredQuantity: number;
+  consumed: number;
+  quantity?: number;
+  allocated?: number;
+  required?: number;
+}
+
+/**
+ * A stock item instance returned from the stock item related-field lookup.
+ */
+interface StockItemInstance {
+  quantity: number;
+  allocated: number;
+}
+
+/**
+ * An allocated stock item record (BuildItem).
+ */
+interface AllocatedItem {
+  pk: number;
+  quantity: number;
+  part_detail?: PartDetail;
+  stock_item_detail?: Record<string, unknown>;
+  location_detail?: Record<string, unknown>;
+}
+
+/**
+ * A stock output item, optionally with serial and pk fields.
+ */
+interface StockOutput {
+  pk: number;
+  serial?: string;
+}
+
+/**
  * Field set for BuildOrder forms
  */
 export function useBuildOrderFields({
@@ -56,8 +144,8 @@ export function useBuildOrderFields({
 
   const batchGenerator = useBatchCodeGenerator({
     modalId: modalId,
-    onGenerate: (value: any) => {
-      setBatchCode((batch: any) => batch || value);
+    onGenerate: (value: string) => {
+      setBatchCode((batch: string) => batch || value);
     }
   });
 
@@ -78,7 +166,7 @@ export function useBuildOrderFields({
             ? true
             : undefined
         },
-        onValueChange(value: any, record?: any) {
+        onValueChange(value: number | null, record?: PartRecord) {
           // Adjust the destination location for the build order
           if (record) {
             setDestination(
@@ -110,7 +198,7 @@ export function useBuildOrderFields({
         placeholder: batchGenerator.result,
         placeholderAutofill: true,
         value: batchCode,
-        onValueChange: (value: any) => setBatchCode(value)
+        onValueChange: (value: string) => setBatchCode(value)
       },
       start_date: {
         icon: <IconCalendar />
@@ -159,7 +247,7 @@ export function useBuildOrderOutputFields({
   build,
   modalId
 }: {
-  build: any;
+  build: BuildOrder;
   modalId: string;
 }): ApiFormFieldSet {
   const trackable: boolean = useMemo(() => {
@@ -200,7 +288,7 @@ export function useBuildOrderOutputFields({
     return {
       quantity: {
         value: quantity,
-        onValueChange: (value: any) => {
+        onValueChange: (value: number) => {
           setQuantity(value);
         }
       },
@@ -215,7 +303,7 @@ export function useBuildOrderOutputFields({
       },
       location: {
         value: location,
-        onValueChange: (value: any) => {
+        onValueChange: (value: number | null) => {
           setLocation(value);
         }
       },
@@ -231,7 +319,7 @@ function BuildOutputFormRow({
   record
 }: Readonly<{
   props: TableFieldRowProps;
-  record: any;
+  record: BuildOutput;
 }>) {
   const stockItemColumn = useMemo(() => {
     if (record.serial) {
@@ -255,7 +343,7 @@ function BuildOutputFormRow({
           field_type: 'number',
           required: true,
           value: props.item.quantity,
-          onValueChange: (value: any) => {
+          onValueChange: (value: number) => {
             props.changeFn(props.idx, 'quantity', value);
           }
         }}
@@ -296,9 +384,9 @@ export function useCompleteBuildOutputsForm({
   outputs,
   onFormSuccess
 }: {
-  build: any;
-  outputs: any[];
-  onFormSuccess: (response: any) => void;
+  build: BuildOrder;
+  outputs: BuildOutput[];
+  onFormSuccess: () => void;
 }) {
   const [location, setLocation] = useState<number | null>(null);
 
@@ -316,7 +404,7 @@ export function useCompleteBuildOutputsForm({
     return {
       outputs: {
         field_type: 'table',
-        value: outputs.map((output: any) => {
+        value: outputs.map((output: BuildOutput) => {
           return {
             output: output.pk,
             quantity: output.quantity
@@ -325,7 +413,7 @@ export function useCompleteBuildOutputsForm({
         modelRenderer: (row: TableFieldRowProps) => {
           const record = outputs.find((output) => output.pk == row.item.output);
           return (
-            <BuildOutputFormRow props={row} record={record} key={record.pk} />
+            <BuildOutputFormRow props={row} record={record!} key={record!.pk} />
           );
         },
         headers: [
@@ -343,7 +431,7 @@ export function useCompleteBuildOutputsForm({
           structural: false
         },
         value: location,
-        onValueChange: (value: any) => {
+        onValueChange: (value: number | null) => {
           setLocation(value);
         }
       },
@@ -371,9 +459,9 @@ export function useScrapBuildOutputsForm({
   outputs,
   onFormSuccess
 }: {
-  build: any;
-  outputs: any[];
-  onFormSuccess: (response: any) => void;
+  build: BuildOrder;
+  outputs: BuildOutput[];
+  onFormSuccess: () => void;
 }) {
   const [location, setLocation] = useState<number | null>(null);
 
@@ -391,7 +479,7 @@ export function useScrapBuildOutputsForm({
     return {
       outputs: {
         field_type: 'table',
-        value: outputs.map((output: any) => {
+        value: outputs.map((output: BuildOutput) => {
           return {
             output: output.pk,
             quantity: output.quantity
@@ -400,7 +488,7 @@ export function useScrapBuildOutputsForm({
         modelRenderer: (row: TableFieldRowProps) => {
           const record = outputs.find((output) => output.pk == row.item.output);
           return (
-            <BuildOutputFormRow props={row} record={record} key={record.pk} />
+            <BuildOutputFormRow props={row} record={record!} key={record!.pk} />
           );
         },
         headers: [
@@ -414,7 +502,7 @@ export function useScrapBuildOutputsForm({
       },
       location: {
         value: location,
-        onValueChange: (value) => {
+        onValueChange: (value: number | null) => {
           setLocation(value);
         }
       },
@@ -449,15 +537,15 @@ export function useCancelBuildOutputsForm({
   outputs,
   onFormSuccess
 }: {
-  build: any;
-  outputs: any[];
-  onFormSuccess: (response: any) => void;
+  build: BuildOrder;
+  outputs: BuildOutput[];
+  onFormSuccess: () => void;
 }) {
   const buildOutputCancelFields: ApiFormFieldSet = useMemo(() => {
     return {
       outputs: {
         field_type: 'table',
-        value: outputs.map((output: any) => {
+        value: outputs.map((output: BuildOutput) => {
           return {
             output: output.pk
           };
@@ -465,7 +553,7 @@ export function useCancelBuildOutputsForm({
         modelRenderer: (row: TableFieldRowProps) => {
           const record = outputs.find((output) => output.pk == row.item.output);
           return (
-            <BuildOutputFormRow props={row} record={record} key={record.pk} />
+            <BuildOutputFormRow props={row} record={record!} key={record!.pk} />
           );
         },
         headers: [
@@ -508,8 +596,8 @@ function BuildAllocateLineRow({
   sourceLocation
 }: Readonly<{
   props: TableFieldRowProps;
-  output: any;
-  record: any;
+  output: StockOutput | undefined;
+  record: BuildLineItem;
   sourceLocation: number | undefined;
 }>) {
   const stockField: ApiFormFieldType = useMemo(() => {
@@ -531,7 +619,7 @@ function BuildAllocateLineRow({
       },
       value: props.item.stock_item,
       name: 'stock_item',
-      onValueChange: (value: any, instance: any) => {
+      onValueChange: (value: number | null, instance?: StockItemInstance) => {
         props.changeFn(props.idx, 'stock_item', value);
 
         // Update the allocated quantity based on the selected stock item
@@ -556,7 +644,7 @@ function BuildAllocateLineRow({
       name: 'quantity',
       required: true,
       value: props.item.quantity,
-      onValueChange: (value: any) => {
+      onValueChange: (value: number) => {
         props.changeFn(props.idx, 'quantity', value);
       }
     };
@@ -611,11 +699,11 @@ export function useAllocateStockToBuildForm({
   onFormSuccess
 }: {
   buildId?: number;
-  output?: any;
+  output?: StockOutput;
   outputId?: number | null;
-  build?: any;
-  lineItems: any[];
-  onFormSuccess: (response: any) => void;
+  build?: BuildOrder;
+  lineItems: BuildLineItem[];
+  onFormSuccess: () => void;
 }) {
   const [sourceLocation, setSourceLocation] = useState<number | undefined>(
     undefined
@@ -637,7 +725,8 @@ export function useAllocateStockToBuildForm({
         modelRenderer: (row: TableFieldRowProps) => {
           // Find the matching record from the passed 'lineItems'
           const record =
-            lineItems.find((item) => item.pk == row.item.build_line) ?? {};
+            lineItems.find((item) => item.pk == row.item.build_line) ??
+            ({} as BuildLineItem);
           return (
             <BuildAllocateLineRow
               key={row.idx}
@@ -655,7 +744,7 @@ export function useAllocateStockToBuildForm({
   }, [output, lineItems, sourceLocation]);
 
   useEffect(() => {
-    setSourceLocation(build?.take_from);
+    setSourceLocation(build?.take_from ?? undefined);
   }, [build?.take_from]);
 
   const sourceLocationField: ApiFormFieldType = useMemo(() => {
@@ -668,7 +757,7 @@ export function useAllocateStockToBuildForm({
       description: t`Select the source location for the stock allocation`,
       name: 'source_location',
       value: build?.take_from,
-      onValueChange: (value: any) => {
+      onValueChange: (value: number | undefined) => {
         setSourceLocation(value);
       }
     };
@@ -735,7 +824,7 @@ function BuildConsumeItemRow({
   record
 }: {
   props: TableFieldRowProps;
-  record: any;
+  record: AllocatedItem;
 }) {
   return (
     <Table.Tr key={`table-row-${record.pk}`}>
@@ -758,7 +847,7 @@ function BuildConsumeItemRow({
             field_type: 'number',
             required: true,
             value: props.item.quantity,
-            onValueChange: (value: any) => {
+            onValueChange: (value: number) => {
               props.changeFn(props.idx, 'quantity', value);
             }
           }}
@@ -781,8 +870,8 @@ export function useConsumeBuildItemsForm({
   onFormSuccess
 }: {
   buildId: number;
-  allocatedItems: any[];
-  onFormSuccess: (response: any) => void;
+  allocatedItems: AllocatedItem[];
+  onFormSuccess: () => void;
 }) {
   const consumeFields: ApiFormFieldSet = useMemo(() => {
     return {
@@ -802,7 +891,7 @@ export function useConsumeBuildItemsForm({
           );
 
           return (
-            <BuildConsumeItemRow key={row.idx} props={row} record={record} />
+            <BuildConsumeItemRow key={row.idx} props={row} record={record!} />
           );
         }
       },
@@ -834,7 +923,7 @@ function BuildConsumeLineRow({
   record
 }: {
   props: TableFieldRowProps;
-  record: any;
+  record: BuildLineItem;
 }) {
   const allocated: number = record.allocatedQuantity ?? record.allocated;
   const required: number = record.requiredQuantity ?? record.required;
@@ -880,8 +969,8 @@ export function useConsumeBuildLinesForm({
   onFormSuccess
 }: {
   buildId: number;
-  buildLines: any[];
-  onFormSuccess: (response: any) => void;
+  buildLines: BuildLineItem[];
+  onFormSuccess: () => void;
 }) {
   const filteredLines = useMemo(() => {
     return buildLines.filter((line) => !line.part_detail?.trackable);
@@ -903,7 +992,7 @@ export function useConsumeBuildLinesForm({
           );
 
           return (
-            <BuildConsumeLineRow key={row.idx} props={row} record={record} />
+            <BuildConsumeLineRow key={row.idx} props={row} record={record!} />
           );
         }
       },

@@ -9,8 +9,7 @@ import { UserRoles } from '@lib/enums/Roles';
 import { apiUrl } from '@lib/functions/Api';
 import type { TableFilter } from '@lib/types/Filters';
 import type { ApiFormFieldSet } from '@lib/types/Forms';
-import type { TableColumn } from '@lib/types/Tables';
-import type { InvenTreeTableProps } from '@lib/types/Tables';
+import type { InvenTreeTableProps, TableColumn, TableRecord } from '@lib/types/Tables';
 import { t } from '@lingui/core/macro';
 import { Group, Text } from '@mantine/core';
 import {
@@ -180,7 +179,7 @@ function partTableColumns(): TableColumn[] {
       sortable: true,
       ordering: 'pricing_max',
       defaultVisible: false,
-      render: (record: any) =>
+      render: (record: TableRecord) =>
         formatPriceRange(record.pricing_min, record.pricing_max)
     },
     LinkColumn({})
@@ -342,8 +341,8 @@ export function PartListTable({
 }: Readonly<{
   enableImport?: boolean;
   props?: InvenTreeTableProps;
-  basePartInstance?: any;
-  defaultPartData?: any;
+  basePartInstance?: unknown;
+  defaultPartData?: unknown;
 }>) {
   const tableColumns = useMemo(() => partTableColumns(), []);
   const tableFilters = useMemo(() => partTableFilters(), []);
@@ -365,8 +364,8 @@ export function PartListTable({
 
     // Override default field values with provided fields
     fields.field_defaults.value = {
-      ...props?.params,
-      ...defaultPartData
+      ...((props?.params ?? {}) as Record<string, unknown>),
+      ...((defaultPartData ?? {}) as Record<string, unknown>)
     };
 
     return fields;
@@ -376,14 +375,14 @@ export function PartListTable({
     url: ApiEndpoints.import_session_list,
     title: t`Import Parts`,
     fields: importSessionFields,
-    onFormSuccess: (response: any) => {
+    onFormSuccess: (response: TableRecord) => {
       setSelectedSession(response.pk);
       setImportOpened(true);
     }
   });
 
-  const initialPartData = useMemo(() => {
-    return defaultPartData ?? props?.params ?? {};
+  const initialPartData = useMemo((): TableRecord => {
+    return (defaultPartData ?? props?.params ?? {}) as TableRecord;
   }, [defaultPartData, props?.params]);
 
   const newPartFields = usePartFields({
@@ -400,7 +399,7 @@ export function PartListTable({
     modelType: ModelType.part
   });
 
-  const [selectedPart, setSelectedPart] = useState<any>({});
+  const [selectedPart, setSelectedPart] = useState<TableRecord>({});
 
   const editPart = useEditApiFormModal({
     url: ApiEndpoints.part_list,
@@ -460,7 +459,7 @@ export function PartListTable({
 
   const setCategory = useBulkEditApiFormModal({
     url: ApiEndpoints.part_list,
-    items: table.selectedIds,
+    items: table.selectedIds as number[],
     title: t`Set Category`,
     fields: {
       category: {}
@@ -476,7 +475,7 @@ export function PartListTable({
   });
 
   const rowActions = useCallback(
-    (record: any): RowAction[] => {
+    (record: TableRecord): RowAction[] => {
       const can_edit = user.hasChangePermission(ModelType.part);
       const can_add = user.hasAddPermission(ModelType.part);
 

@@ -6,7 +6,7 @@ import { getDetailUrl } from '@lib/functions/Navigation';
 import { navigateToLink } from '@lib/functions/Navigation';
 import type { TableFilter } from '@lib/types/Filters';
 import type { ApiFormFieldSet } from '@lib/types/Forms';
-import type { InvenTreeTableProps, TableState } from '@lib/types/Tables';
+import type { InvenTreeTableProps, TableRecord, TableState } from '@lib/types/Tables';
 import type { TableColumn } from '@lib/types/Tables';
 import { t } from '@lingui/core/macro';
 import { Box, Stack } from '@mantine/core';
@@ -18,6 +18,7 @@ import {
 } from 'mantine-contextmenu';
 import {
   DataTable,
+  type DataTableColumn,
   type DataTableRowExpansionProps,
   type DataTableSortStatus,
   useDataTableColumns
@@ -40,7 +41,7 @@ const PAGE_SIZES = [10, 15, 20, 25, 50, 100, 500];
 /**
  * Default table properties (used if not specified)
  */
-const defaultInvenTreeTableProps: InvenTreeTableProps = {
+const defaultInvenTreeTableProps: Partial<InvenTreeTableProps> = {
   params: {},
   noRecordsText: t`No records found`,
   enableDownload: false,
@@ -61,7 +62,7 @@ const defaultInvenTreeTableProps: InvenTreeTableProps = {
 /**
  * Table Component which extends DataTable with custom InvenTree functionality
  */
-export function InvenTreeTable<T extends Record<string, any>>({
+export function InvenTreeTable<T extends TableRecord>({
   url,
   tableState,
   tableData,
@@ -70,7 +71,7 @@ export function InvenTreeTable<T extends Record<string, any>>({
 }: Readonly<{
   url?: string;
   tableState: TableState;
-  tableData?: any[];
+  tableData?: T[];
   columns: TableColumn<T>[];
   props: InvenTreeTableProps<T>;
 }>) {
@@ -116,7 +117,7 @@ export function InvenTreeTable<T extends Record<string, any>>({
   const filters: TableFilter[] = useMemo(() => {
     return (
       props.tableFilters
-        ?.filter((f: any) => f.active != false)
+        ?.filter((f: TableFilter) => f.active != false)
         ?.map((filter) => {
           return {
             ...filter,
@@ -127,11 +128,11 @@ export function InvenTreeTable<T extends Record<string, any>>({
   }, [props.tableFilters, fieldNames]);
 
   // Build table properties based on provided props (and default props)
-  const tableProps: InvenTreeTableProps<T> = useMemo(() => {
+  const tableProps = useMemo((): InvenTreeTableProps<T> => {
     return {
       ...defaultInvenTreeTableProps,
       ...props
-    };
+    } as InvenTreeTableProps<T>;
   }, [props]);
 
   // Request OPTIONS data from the API, before we load the table
@@ -146,7 +147,7 @@ export function InvenTreeTable<T extends Record<string, any>>({
     ],
     retry: 5,
     retryDelay: (attempt: number) => (1 + attempt) * 250,
-    throwOnError: (error: any) => {
+    throwOnError: (error: Error) => {
       showApiErrorMessage({
         error: error,
         title: t`Error loading table options`
@@ -224,7 +225,7 @@ export function InvenTreeTable<T extends Record<string, any>>({
     if (props.enableColumnSwitching == false) {
       return false;
     } else {
-      return columns.some((col: TableColumn) => {
+      return columns.some((col: TableColumn<T>) => {
         if (col.hidden == true) {
           // Not a switchable column - is hidden
           return false;
@@ -238,15 +239,15 @@ export function InvenTreeTable<T extends Record<string, any>>({
   }, [columns, props.enableColumnSwitching]);
 
   const onSelectedRecordsChange = useCallback(
-    (records: any[]) => {
+    (records: T[]) => {
       tableState.setSelectedRecords(records);
     },
     [tableState.setSelectedRecords]
   );
 
   // Update column visibility when hiddenColumns change
-  const dataColumns: any = useMemo(() => {
-    let cols: TableColumn[] = columns.filter((col) => col?.hidden != true);
+  const dataColumns: TableColumn<T>[] = useMemo(() => {
+    let cols: TableColumn<T>[] = columns.filter((col) => col?.hidden != true);
 
     cols = cols.map((col) => {
       // If the column is *not* switchable, it is always visible
@@ -262,14 +263,14 @@ export function InvenTreeTable<T extends Record<string, any>>({
         hidden: hidden,
         resizable: col.resizable ?? true,
         title: col.title ?? fieldNames[col.accessor] ?? `${col.accessor}`,
-        cellsStyle: (record: any, index: number) => {
-          const width = (col as any).minWidth ?? 100;
+        cellsStyle: (_record: T, _index: number) => {
+          const width = col.minWidth ?? 100;
           return {
             minWidth: width
           };
         },
-        titleStyle: (record: any, index: number) => {
-          const width = (col as any).minWidth ?? 100;
+        titleStyle: (_record: T, _index: number) => {
+          const width = col.minWidth ?? 100;
           return {
             minWidth: width
           };
@@ -286,7 +287,7 @@ export function InvenTreeTable<T extends Record<string, any>>({
         resizable: false,
         switchable: false,
         width: 50,
-        render: (record: any, index?: number | undefined) => (
+        render: (record: T, index?: number | undefined) => (
           <RowActions
             actions={tableProps.rowActions?.(record) ?? []}
             disabled={tableState.selectedRecords.length > 0}
@@ -327,15 +328,15 @@ export function InvenTreeTable<T extends Record<string, any>>({
   );
 
   // Final state of the table columns
-  const tableColumns = useDataTableColumns({
+  const tableColumns = useDataTableColumns<T>({
     key: cacheKey,
-    columns: dataColumns,
+    columns: dataColumns as DataTableColumn<T>[],
     getInitialValueInEffect: false
   });
 
   // Cache the "ordering" of the columns
   const dataColumnsOrder: string[] = useMemo(() => {
-    return dataColumns.map((col: any) => col.accessor);
+    return dataColumns.map((col: TableColumn<T>) => col.accessor);
   }, [dataColumns]);
 
   // Ensure that the "actions" column is always at the end of the list
@@ -388,7 +389,7 @@ export function InvenTreeTable<T extends Record<string, any>>({
    */
   const getTableFilters = useCallback(
     (paginate = false) => {
-      const queryParams = {
+      const queryParams: Record<string, unknown> = {
         ...tableProps.params
       };
 
@@ -422,7 +423,7 @@ export function InvenTreeTable<T extends Record<string, any>>({
         if (sortStatus.direction == 'asc') {
           queryParams.ordering = ordering;
         } else {
-          queryParams.ordering = `-${ordering}`;
+          queryParams.ordering = `-${String(ordering)}`;
         }
       }
 
@@ -479,7 +480,9 @@ export function InvenTreeTable<T extends Record<string, any>>({
 
     // Find matching column:
     // If column provides custom ordering term, use that
-    const column = dataColumns.find((col: any) => col.accessor == key);
+    const column = dataColumns.find(
+      (col: TableColumn<T>) => col.accessor == key
+    );
     return column?.ordering || key;
   }
 
@@ -556,7 +559,7 @@ export function InvenTreeTable<T extends Record<string, any>>({
     ],
     retry: 5,
     retryDelay: (attempt: number) => (1 + attempt) * 250,
-    throwOnError: (error: any) => {
+    throwOnError: (error: Error) => {
       showApiErrorMessage({
         error: error,
         title: t`Error loading table data`
@@ -614,9 +617,9 @@ export function InvenTreeTable<T extends Record<string, any>>({
       columnIndex
     }: {
       event: React.MouseEvent;
-      record: any;
+      record: T;
       index: number;
-      column: any;
+      column: DataTableColumn<T>;
       columnIndex: number;
     }) => {
       // Ignore any click on the 'actions' column
@@ -653,9 +656,9 @@ export function InvenTreeTable<T extends Record<string, any>>({
     column,
     event
   }: {
-    record: any;
-    column: any;
-    event: any;
+    record: T;
+    column: DataTableColumn<T> & { noContext?: boolean };
+    event: React.MouseEvent;
   }) => {
     if (column?.noContext === true) {
       return;
@@ -698,7 +701,7 @@ export function InvenTreeTable<T extends Record<string, any>>({
         key: 'detail',
         title: detailsText,
         icon: <IconArrowRight />,
-        onClick: (event: any) => {
+        onClick: (event: React.MouseEvent) => {
           cancelEvent(event);
           navigateToLink(url, navigate, event);
         }
@@ -732,7 +735,7 @@ export function InvenTreeTable<T extends Record<string, any>>({
         expanded: {
           recordIds: tableState.expandedRecords,
           onRecordIdsChange: (ids: any[]) => {
-            tableState.setExpandedRecords(ids);
+            tableState.setExpandedRecords(ids as number[]);
           }
         }
       };
@@ -743,7 +746,7 @@ export function InvenTreeTable<T extends Record<string, any>>({
     ]);
 
   const optionalParams = useMemo(() => {
-    let _params: Record<string, any> = {};
+    let _params: Record<string, unknown> = {};
 
     if (tableProps.enablePagination) {
       _params = {
@@ -793,7 +796,7 @@ export function InvenTreeTable<T extends Record<string, any>>({
         )}
         <Boundary label={`InvenTreeTable-${cacheKey}`}>
           <Box pos='relative'>
-            <DataTable
+            <DataTable<T>
               style={{
                 stickyHeader: stickyTableHeader ? 'top' : undefined
               }}
@@ -809,7 +812,9 @@ export function InvenTreeTable<T extends Record<string, any>>({
               sortStatus={sortStatus}
               onSortStatusChange={handleSortStatusChange}
               selectedRecords={
-                enableSelection ? tableState.selectedRecords : undefined
+                enableSelection
+                  ? (tableState.selectedRecords as T[])
+                  : undefined
               }
               onSelectedRecordsChange={
                 enableSelection ? onSelectedRecordsChange : undefined
@@ -817,9 +822,11 @@ export function InvenTreeTable<T extends Record<string, any>>({
               rowExpansion={rowExpansion}
               fetching={isFetching}
               noRecordsText={missingRecordsText}
-              records={tableState.records}
+              records={tableState.records as T[]}
               storeColumnsKey={cacheKey}
-              columns={tableColumns.effectiveColumns}
+              columns={
+                tableColumns.effectiveColumns as DataTableColumn<T>[]
+              }
               onCellClick={supportsCellClick ? handleCellClick : undefined}
               noHeader={tableProps.noHeader ?? false}
               defaultColumnProps={{

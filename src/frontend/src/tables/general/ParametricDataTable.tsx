@@ -11,7 +11,7 @@ import {
   navigateToLink
 } from '@lib/index';
 import type { TableFilter } from '@lib/types/Filters';
-import type { TableColumn } from '@lib/types/Tables';
+import type { RowAction, TableColumn } from '@lib/types/Tables';
 import { t } from '@lingui/core/macro';
 import { Group } from '@mantine/core';
 import { useHover } from '@mantine/hooks';
@@ -34,32 +34,85 @@ import {
   ParameterFilter
 } from './ParametricDataTableFilters';
 
+/**
+ * Represents a parameter template record.
+ */
+interface ParameterTemplate {
+  pk: number;
+  name: string;
+  units?: string;
+  checkbox?: boolean;
+  choices?: string;
+}
+
+/**
+ * Represents a parameter value record attached to an instance.
+ */
+interface ParameterRecord {
+  pk: number;
+  template: number;
+  data: string;
+  data_numeric?: number;
+}
+
+/**
+ * Represents a record (instance) with parameters.
+ */
+interface ParametricRecord {
+  pk: number;
+  parameters?: ParameterRecord[];
+  [key: string]: unknown;
+}
+
+/**
+ * Represents the parameter filter state per-template.
+ * Keys are operator strings (e.g. '=', '<', '>') and values are filter values.
+ */
+type OperatorFilterMap = Record<string, string>;
+
+/**
+ * Represents the full parametric filter state.
+ * Keys are `parameter_{templateId}` and values are operator filter maps.
+ */
+type ParameterFilterState = Record<string, OperatorFilterMap>;
+
+/**
+ * Extended TableColumn with extra template metadata.
+ */
+interface ParameterTableColumn extends TableColumn {
+  extra?: {
+    template: number;
+  };
+}
+
 // Render an individual parameter cell
 function ParameterCell({
   record,
   template,
   canEdit
 }: Readonly<{
-  record: any;
-  template: any;
+  record: ParametricRecord;
+  template: ParameterTemplate;
   canEdit: boolean;
 }>) {
   const { hovered, ref } = useHover();
 
   // Find matching template parameter
   const parameter = useMemo(() => {
-    return record.parameters?.find((p: any) => p.template == template.pk);
+    return record.parameters?.find(
+      (p: ParameterRecord) => p.template == template.pk
+    );
   }, [record, template]);
 
-  const extra: any[] = [];
+  const extra: ReactNode[] = [];
 
   // Format the value for display
   const value: ReactNode = useMemo(() => {
-    let v: any = parameter?.data;
+    let v: ReactNode = parameter?.data;
 
     // Handle boolean values
     if (template?.checkbox && v != undefined) {
-      v = <YesNoButton value={parameter.data} />;
+      v = <YesNoButton value={parameter?.data} />;
     }
 
     return v;
@@ -69,7 +122,7 @@ function ParameterCell({
     template.units &&
     parameter &&
     parameter.data_numeric &&
-    parameter.data_numeric != parameter.data
+    String(parameter.data_numeric) != parameter.data
   ) {
     const numeric = formatDecimal(parameter.data_numeric, { digits: 15 });
     extra.push(`${numeric} [${template.units}]`);
@@ -108,7 +161,7 @@ export default function ParametricDataTable({
 }: {
   modelType: ModelType;
   endpoint: ApiEndpoints | string;
-  queryParams?: Record<string, any>;
+  queryParams?: Record<string, unknown>;
   customFilters?: TableFilter[];
   customColumns?: TableColumn[];
 }) {
@@ -150,7 +203,8 @@ export default function ParametricDataTable({
    *
    * Which allows multiple filters to be applied against each parameter template.
    */
-  const [parameterFilters, setParameterFilters] = useState<any>({});
+  const [parameterFilters, setParameterFilters] =
+    useState<ParameterFilterState>({});
 
   /* Remove filters for a specific parameter template
    * - If no operator is specified, remove all filters for this template
@@ -162,7 +216,7 @@ export default function ParametricDataTable({
 
       if (!operator) {
         // If no operator is specified, remove all filters for this template
-        setParameterFilters((prev: any) => {
+        setParameterFilters((prev: ParameterFilterState) => {
           const newFilters = { ...prev };
           // Remove any filters that match the template ID
           Object.keys(newFilters).forEach((key: string) => {
@@ -177,7 +231,7 @@ export default function ParametricDataTable({
       }
 
       // An operator is specified, so we remove filters for that operator only
-      setParameterFilters((prev: any) => {
+      setParameterFilters((prev: ParameterFilterState) => {
         const filters = { ...prev };
 
         const paramFilters = filters[filterName] || {};
@@ -211,7 +265,7 @@ export default function ParametricDataTable({
       const filterValue = value?.toString().trim() ?? '';
 
       if (filterValue.length > 0) {
-        setParameterFilters((prev: any) => {
+        setParameterFilters((prev: ParameterFilterState) => {
           const filters = { ...prev };
           const paramFilters = filters[filterName] || {};
 
@@ -234,7 +288,7 @@ export default function ParametricDataTable({
     const filters: Record<string, string> = {};
 
     Object.keys(parameterFilters).forEach((key: string) => {
-      const paramFilters: any = parameterFilters[key];
+      const paramFilters: OperatorFilterMap = parameterFilters[key];
 
       Object.keys(paramFilters).forEach((operator: string) => {
         const name = `${key}${PARAMETER_FILTER_OPERATORS[operator] || ''}`;
@@ -261,12 +315,12 @@ export default function ParametricDataTable({
     title: t`Add Parameter`,
     fields: useMemo(() => ({ ...parameterFields }), [parameterFields]),
     focus: 'data',
-    onFormSuccess: (parameter: any) => {
+    onFormSuccess: (parameter: ParameterRecord) => {
       updateParameterRecord(selectedInstance, parameter);
 
       // Ensure that the parameter template is included in the table
       const template = parameterTemplates.data.find(
-        (t: any) => t.pk == parameter.template
+        (t: ParameterTemplate) => t.pk == parameter.template
       );
 
       if (!template) {
@@ -286,16 +340,18 @@ export default function ParametricDataTable({
     pk: selectedParameter,
     fields: useMemo(() => ({ ...parameterFields }), [parameterFields]),
     focus: 'data',
-    onFormSuccess: (parameter: any) => {
+    onFormSuccess: (parameter: ParameterRecord) => {
       updateParameterRecord(selectedInstance, parameter);
     }
   });
 
   // Update a single parameter record in the table
   const updateParameterRecord = useCallback(
-    (part: number, parameter: any) => {
-      const records = table.records;
-      const recordIndex = records.findIndex((record: any) => record.pk == part);
+    (part: number, parameter: ParameterRecord) => {
+      const records = table.records as ParametricRecord[];
+      const recordIndex = records.findIndex(
+        (record: ParametricRecord) => record.pk == part
+      );
 
       if (recordIndex < 0) {
         // No matching part: reload the entire table
@@ -303,18 +359,22 @@ export default function ParametricDataTable({
         return;
       }
 
-      const parameterIndex = records[recordIndex].parameters.findIndex(
-        (p: any) => p.pk == parameter.pk
+      const record = records[recordIndex];
+      const parameters = record.parameters ?? [];
+
+      const parameterIndex = parameters.findIndex(
+        (p: ParameterRecord) => p.pk == parameter.pk
       );
 
       if (parameterIndex < 0) {
         // No matching parameter - append new parameter
-        records[recordIndex].parameters.push(parameter);
+        parameters.push(parameter);
       } else {
-        records[recordIndex].parameters[parameterIndex] = parameter;
+        parameters[parameterIndex] = parameter;
       }
 
-      table.updateRecord(records[recordIndex]);
+      record.parameters = parameters;
+      table.updateRecord(record);
     },
     [table.records, table.updateRecord]
   );
@@ -322,7 +382,7 @@ export default function ParametricDataTable({
   const parameterColumns: TableColumn[] = useMemo(() => {
     const data = parameterTemplates?.data || [];
 
-    return data.map((template: any) => {
+    return data.map((template: ParameterTemplate) => {
       let title = template.name;
 
       if (template.units) {
@@ -338,7 +398,7 @@ export default function ParametricDataTable({
         extra: {
           template: template.pk
         },
-        render: (record: any) => (
+        render: (record: ParametricRecord) => (
           <ParameterCell
             record={record}
             template={template}
@@ -362,20 +422,23 @@ export default function ParametricDataTable({
   }, [user, parameterTemplates.data, parameterFilters]);
 
   // Callback function when a parameter cell is clicked
-  const onParameterClick = useCallback((template: number, instance: any) => {
-    setSelectedTemplate(template);
-    setSelectedInstance(instance.pk);
-    const parameter = instance.parameters?.find(
-      (p: any) => p.template == template
-    );
+  const onParameterClick = useCallback(
+    (template: number, instance: ParametricRecord) => {
+      setSelectedTemplate(template);
+      setSelectedInstance(instance.pk);
+      const parameter = instance.parameters?.find(
+        (p: ParameterRecord) => p.template == template
+      );
 
-    if (parameter) {
-      setSelectedParameter(parameter.pk);
-      editParameter.open();
-    } else {
-      addParameter.open();
-    }
-  }, []);
+      if (parameter) {
+        setSelectedParameter(parameter.pk);
+        editParameter.open();
+      } else {
+        addParameter.open();
+      }
+    },
+    []
+  );
 
   const tableFilters: TableFilter[] = useMemo(() => {
     return [...(customFilters || [])];
@@ -386,7 +449,7 @@ export default function ParametricDataTable({
   }, [customColumns, parameterColumns]);
 
   const rowActions = useCallback(
-    (record: any) => {
+    (record: ParametricRecord): RowAction[] => {
       return [
         {
           title: t`Add Parameter`,
@@ -427,8 +490,11 @@ export default function ParametricDataTable({
 
             // Is this a "parameter" cell?
             if (column?.accessor?.toString()?.startsWith('parameter_')) {
-              const col = column as any;
-              onParameterClick(col.extra.template, record);
+              const col = column as ParameterTableColumn;
+              onParameterClick(
+                col.extra!.template,
+                record as ParametricRecord
+              );
             } else if (record?.pk) {
               // Navigate through to the detail page
               const url = getDetailUrl(modelType, record.pk);

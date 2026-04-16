@@ -26,7 +26,7 @@ import { ModelType } from '@lib/enums/ModelType';
 import { UserRoles } from '@lib/enums/Roles';
 import { apiUrl } from '@lib/functions/Api';
 import type { TableFilter } from '@lib/types/Filters';
-import type { TableColumn } from '@lib/types/Tables';
+import type { TableColumn, TableRecord } from '@lib/types/Tables';
 import { RenderPart } from '../../components/render/Part';
 import OrderPartsWizard from '../../components/wizards/OrderPartsWizard';
 import { formatCurrency, formatDecimal } from '../../defaults/formatters';
@@ -80,7 +80,7 @@ export default function SalesOrderLineItemTable({
         sortable: true,
         switchable: false,
         minWidth: 175,
-        render: (record: any) => {
+        render: (record: TableRecord) => {
           return (
             <Group wrap='nowrap'>
               {record.part_detail?.virtual || (
@@ -114,7 +114,7 @@ export default function SalesOrderLineItemTable({
       }),
       {
         accessor: 'sale_price',
-        render: (record: any) =>
+        render: (record: TableRecord) =>
           formatCurrency(record.sale_price, {
             currency: record.sale_price_currency
           })
@@ -122,7 +122,7 @@ export default function SalesOrderLineItemTable({
       {
         accessor: 'total_price',
         title: t`Total Price`,
-        render: (record: any) =>
+        render: (record: TableRecord) =>
           formatCurrency(record.sale_price, {
             currency: record.sale_price_currency,
             multiplier: record.quantity
@@ -136,7 +136,7 @@ export default function SalesOrderLineItemTable({
       {
         accessor: 'stock',
         title: t`Available Stock`,
-        render: (record: any) => {
+        render: (record: TableRecord) => {
           if (record.part_detail?.virtual) {
             return <Text size='sm' fs='italic'>{t`Virtual part`}</Text>;
           }
@@ -194,7 +194,7 @@ export default function SalesOrderLineItemTable({
       {
         accessor: 'allocated',
         sortable: true,
-        render: (record: any) => {
+        render: (record: TableRecord) => {
           if (record.part_detail?.virtual) {
             return <Text size='sm' fs='italic'>{t`Virtual part`}</Text>;
           }
@@ -211,7 +211,7 @@ export default function SalesOrderLineItemTable({
       {
         accessor: 'shipped',
         sortable: true,
-        render: (record: any) => {
+        render: (record: TableRecord) => {
           if (record.part_detail?.virtual) {
             return <Text size='sm' fs='italic'>{t`Virtual part`}</Text>;
           }
@@ -236,7 +236,7 @@ export default function SalesOrderLineItemTable({
 
   const [selectedLineId, setSelectedLineId] = useState<number>(0);
 
-  const [selectedSupplierPart, setSelectedSupplierPart] = useState<any>(null);
+  const [selectedSupplierPart, setSelectedSupplierPart] = useState<TableRecord | null>(null);
 
   const [initialData, setInitialData] = useState({});
 
@@ -316,7 +316,7 @@ export default function SalesOrderLineItemTable({
     modelType: ModelType.build
   });
 
-  const [selectedItems, setSelectedItems] = useState<any[]>([]);
+  const [selectedItems, setSelectedItems] = useState<TableRecord[]>([]);
 
   const allocateStock = useAllocateToSalesOrderForm({
     orderId: orderId,
@@ -329,7 +329,7 @@ export default function SalesOrderLineItemTable({
     }
   });
 
-  const [partsToOrder, setPartsToOrder] = useState<any[]>([]);
+  const [partsToOrder, setPartsToOrder] = useState<TableRecord[]>([]);
 
   const orderPartsWizard = OrderPartsWizard({
     parts: partsToOrder
@@ -392,7 +392,7 @@ export default function SalesOrderLineItemTable({
   }, [user, orderId, table.hasSelectedRecords, table.selectedRecords]);
 
   const rowActions = useCallback(
-    (record: any): RowAction[] => {
+    (record: TableRecord): RowAction[] => {
       const allocated = (record?.allocated ?? 0) > (record?.quantity ?? 0);
       const virtual = record?.part_detail?.virtual ?? false;
 
@@ -496,16 +496,16 @@ export default function SalesOrderLineItemTable({
   );
 
   // Control row expansion
-  const rowExpansion: DataTableRowExpansionProps<any> = useMemo(() => {
+  const rowExpansion: DataTableRowExpansionProps<TableRecord> = useMemo(() => {
     return {
       allowMultiple: true,
-      expandable: ({ record }: { record: any }) => {
+      expandable: ({ record }: { record: TableRecord }) => {
         if (record?.part_detail?.virtual) {
           return false;
         }
         return table.isRowExpanded(record.pk) || record.allocated > 0;
       },
-      content: ({ record }: { record: any }) => {
+      content: ({ record }: { record: TableRecord }) => {
         return (
           <SalesOrderAllocationTable
             showOrderInfo={false}

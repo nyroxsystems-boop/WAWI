@@ -23,7 +23,7 @@ import { YesNoButton } from '@lib/components/YesNoButton';
 import type { ModelType } from '@lib/enums/ModelType';
 import { resolveItem } from '@lib/functions/Conversion';
 import { cancelEvent } from '@lib/functions/Events';
-import type { TableColumn, TableColumnProps } from '@lib/types/Tables';
+import type { TableColumn, TableColumnProps, TableRecord } from '@lib/types/Tables';
 import type { ReactNode } from 'react';
 import { Thumbnail } from '../components/images/Thumbnail';
 import { TableStatusRenderer } from '../components/render/StatusRenderer';
@@ -49,7 +49,7 @@ export function RenderPartColumn({
   part,
   full_name
 }: {
-  part: any;
+  part: TableRecord | undefined;
   full_name?: boolean;
 }) {
   if (!part) {
@@ -92,7 +92,7 @@ export function PartColumn(props: PartColumnProps): TableColumn {
     sortable: true,
     switchable: false,
     minWidth: '175px',
-    render: (record: any) => {
+    render: (record: TableRecord) => {
       const part =
         props.part === ''
           ? record
@@ -110,7 +110,7 @@ export function PartColumn(props: PartColumnProps): TableColumn {
 export function CompanyColumn({
   company
 }: {
-  company: any;
+  company: TableRecord | undefined;
 }) {
   return company ? (
     <Group gap='xs' wrap='nowrap'>
@@ -134,7 +134,7 @@ export function PathColumn(props: TableColumnProps): TableColumn {
   return {
     ...props,
     accessor: props.accessor ?? 'path',
-    render: (record: any) => {
+    render: (record: TableRecord) => {
       const instance = resolveItem(record, props.accessor ?? '');
 
       if (!instance || !instance.name) {
@@ -164,7 +164,7 @@ export function PathColumnPlainText(props: TableColumnProps): TableColumn {
   return {
     ...props,
     accessor: props.accessor ?? 'path',
-    render: (record: any) => {
+    render: (record: TableRecord) => {
       const instance = resolveItem(record, props.accessor ?? '');
 
       if (!instance || !instance.pathstring) {
@@ -253,7 +253,7 @@ export function BooleanColumn(props: TableColumn): TableColumn {
     sortable: true,
     switchable: true,
     minWidth: '75px',
-    render: (record: any) => (
+    render: (record: TableRecord) => (
       <Center>
         <YesNoButton value={resolveItem(record, props.accessor ?? '')} />
       </Center>
@@ -264,7 +264,7 @@ export function BooleanColumn(props: TableColumn): TableColumn {
 
 export function DecimalColumn(props: TableColumn): TableColumn {
   return {
-    render: (record: any) => {
+    render: (record: TableRecord) => {
       const value = resolveItem(record, props.accessor ?? '');
       return formatDecimal(value);
     },
@@ -288,7 +288,7 @@ export function LinkColumn(props: TableColumnProps): TableColumn {
     accessor: 'link',
     sortable: false,
     defaultVisible: false,
-    render: (record: any) => {
+    render: (record: TableRecord) => {
       const url = resolveItem(record, props.accessor ?? 'link');
 
       if (!url) {
@@ -300,7 +300,7 @@ export function LinkColumn(props: TableColumnProps): TableColumn {
           href={url}
           target='_blank'
           rel='noreferrer noopener'
-          onClick={(event: any) => {
+          onClick={(event: React.MouseEvent) => {
             cancelEvent(event);
 
             window.open(url, '_blank', 'noopener,noreferrer');
@@ -330,7 +330,7 @@ export function NoteColumn(props: TableColumnProps): TableColumn {
     accessor: 'note',
     sortable: false,
     title: t`Note`,
-    render: (record: any) => record.note ?? record.notes,
+    render: (record: TableRecord) => record.note ?? record.notes,
     ...props
   };
 }
@@ -340,7 +340,7 @@ export function LineItemsProgressColumn(props: TableColumnProps): TableColumn {
     accessor: 'line_items',
     sortable: true,
     minWidth: 125,
-    render: (record: any) => (
+    render: (record: TableRecord) => (
       <ProgressBar
         progressLabel={true}
         value={record.completed_lines}
@@ -361,7 +361,7 @@ export function ProjectCodeColumn(props: TableColumnProps): TableColumn {
     sortable: true,
     title: t`Project Code`,
     hidden: !enabled,
-    render: (record: any) => {
+    render: (record: TableRecord) => {
       const project_code = resolveItem(
         record,
         props.accessor ?? 'project_code_detail'
@@ -395,7 +395,7 @@ export function UserColumn(props: TableColumnProps): TableColumn {
     title: t`User`,
     sortable: true,
     switchable: true,
-    render: (record: any) => {
+    render: (record: TableRecord) => {
       const instance = resolveItem(record, props.accessor ?? 'user_detail');
       if (instance) {
         const extra: ReactNode[] = [
@@ -444,7 +444,7 @@ export function OwnerColumn(props: TableColumnProps): TableColumn {
     title: t`Owner`,
     sortable: true,
     switchable: true,
-    render: (record: any) => {
+    render: (record: TableRecord) => {
       const instance = resolveItem(record, props.accessor ?? 'owner_detail');
 
       if (instance) {
@@ -472,9 +472,9 @@ export function DateColumn(props: TableColumnProps): TableColumn {
     sortable: true,
     title: t`Date`,
     switchable: true,
-    render: (record: any) =>
+    render: (record: TableRecord) =>
       formatDate(resolveItem(record, props.accessor ?? 'date'), {
-        showTime: props.extra?.showTime
+        showTime: props.extra?.showTime as boolean | undefined
       }),
     ...props
   };
@@ -537,7 +537,7 @@ export function CurrencyColumn({
     accessor: accessor,
     title: title ?? t`Currency`,
     sortable: sortable ?? true,
-    render: (record: any) => {
+    render: (record: TableRecord) => {
       const currency_key = currency_accessor ?? `${accessor}_currency`;
       return formatCurrency(resolveItem(record, accessor), {
         currency: currency ?? resolveItem(record, currency_key)

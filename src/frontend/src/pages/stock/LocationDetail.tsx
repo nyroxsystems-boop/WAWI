@@ -173,7 +173,7 @@ export default function Stock() {
         name: 'sublocations',
         label: id ? t`Sublocations` : t`Stock Locations`,
         icon: <IconSitemap />,
-        content: <StockLocationTable parentId={id} />
+        content: <StockLocationTable parentId={id ? Number(id) : undefined} />
       },
       {
         name: 'stock-items',

@@ -92,7 +92,7 @@ export default function BarcodeScanTable({
         color='red'
         tooltip={t`Delete selected records`}
         onClick={() => {
-          onItemsDeleted(table.selectedIds);
+          onItemsDeleted(table.selectedIds as string[]);
           table.clearSelectedRecords();
         }}
       />
@@ -100,7 +100,7 @@ export default function BarcodeScanTable({
   }, [table.hasSelectedRecords, table.selectedIds]);
 
   useEffect(() => {
-    onItemsSelected(table.selectedIds);
+    onItemsSelected(table.selectedIds as string[]);
   }, [table.selectedIds]);
 
   return (

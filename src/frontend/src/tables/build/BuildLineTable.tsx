@@ -11,7 +11,7 @@ import {
   IconWand
 } from '@tabler/icons-react';
 import type { DataTableRowExpansionProps } from 'mantine-datatable';
-import { useCallback, useMemo, useState } from 'react';
+import { type ReactNode, useCallback, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { ActionButton } from '@lib/components/ActionButton';
@@ -53,6 +53,108 @@ import RowExpansionIcon from '../RowExpansionIcon';
 import { TableHoverCard } from '../TableHoverCard';
 
 /**
+ * Represents a stock allocation record within a build line.
+ */
+interface BuildAllocation {
+  [key: string]: unknown;
+  pk: number;
+  quantity: number;
+  stock_item: number;
+  stock_item_detail?: {
+    serial?: string;
+    batch?: string;
+  };
+  location_detail?: Record<string, unknown>;
+  install_into?: number;
+}
+
+/**
+ * Represents a BOM item detail associated with a build line.
+ */
+interface BomItemDetail {
+  [key: string]: unknown;
+  quantity?: number;
+  reference?: string;
+  optional?: boolean;
+  consumable?: boolean;
+  allow_variants?: boolean;
+  inherited?: boolean;
+  setup_quantity?: number;
+  attrition?: number;
+  rounding_multiple?: number;
+}
+
+/**
+ * Represents a part detail record.
+ */
+interface PartDetail {
+  [key: string]: unknown;
+  pk: number;
+  name?: string;
+  full_name?: string;
+  IPN?: string;
+  description?: string;
+  thumbnail?: string;
+  image?: string;
+  units?: string;
+  trackable?: boolean;
+  active?: boolean;
+  purchaseable?: boolean;
+  assembly?: boolean;
+  is_assembly?: boolean;
+  locked?: boolean;
+  starred?: boolean;
+}
+
+/**
+ * Represents a build line record returned by the API.
+ */
+interface BuildLineRecord {
+  [key: string]: unknown;
+  pk: number;
+  part: number;
+  part_detail?: PartDetail;
+  bom_item?: number;
+  bom_item_detail?: BomItemDetail;
+  category_detail?: Record<string, unknown>;
+  quantity: number;
+  allocated: number;
+  consumed: number;
+  available_stock: number;
+  available_substitute_stock: number;
+  available_variant_stock: number;
+  in_production: number;
+  scheduled_to_build: number;
+  on_order: number;
+  external_stock: number;
+  trackable: boolean;
+  allocations: BuildAllocation[];
+  filteredAllocations?: BuildAllocation[];
+  requiredQuantity: number;
+  allocatedQuantity: number;
+}
+
+/**
+ * Represents a build order record.
+ */
+interface BuildOrderRecord {
+  [key: string]: unknown;
+  pk: number;
+  status: number;
+  take_from?: number;
+  quantity?: number;
+}
+
+/**
+ * Represents a build output record.
+ */
+interface BuildOutputRecord {
+  [key: string]: unknown;
+  pk: number;
+  quantity?: number;
+}
+
+/**
  * Render a sub-table of allocated stock against a particular build line.
  *
  * - Renders a simplified table of stock allocated against the build line
@@ -65,7 +167,7 @@ export function BuildLineSubTable({
   onEditAllocation,
   onDeleteAllocation
 }: Readonly<{
-  lineItem: any;
+  lineItem: BuildLineRecord;
   onEditAllocation?: (pk: number) => void;
   onDeleteAllocation?: (pk: number) => void;
 }>) {
@@ -73,7 +175,7 @@ export function BuildLineSubTable({
   const navigate = useNavigate();
   const table = useTable('buildline-subtable');
 
-  const tableColumns: any[] = useMemo(() => {
+  const tableColumns: TableColumn[] = useMemo(() => {
     return [
       PartColumn({
         part: 'part_detail'
@@ -81,11 +183,12 @@ export function BuildLineSubTable({
       {
         accessor: 'quantity',
         title: t`Quantity`,
-        render: (record: any) => {
-          if (!!record.stock_item_detail?.serial) {
-            return `# ${record.stock_item_detail.serial}`;
+        render: (record: Record<string, unknown>) => {
+          const allocation = record as BuildAllocation;
+          if (allocation.stock_item_detail?.serial) {
+            return `# ${allocation.stock_item_detail.serial}`;
           }
-          return record.quantity;
+          return allocation.quantity;
         }
       },
       {
@@ -99,12 +202,13 @@ export function BuildLineSubTable({
   }, []);
 
   const rowActions = useCallback(
-    (record: any): RowAction[] => {
+    (record: Record<string, unknown>): RowAction[] => {
+      const allocation = record as BuildAllocation;
       return [
         RowEditAction({
           hidden: !onEditAllocation || !user.hasChangeRole(UserRoles.build),
           onClick: () => {
-            onEditAllocation?.(record.pk);
+            onEditAllocation?.(allocation.pk);
           }
         }),
         {
@@ -114,13 +218,13 @@ export function BuildLineSubTable({
           color: 'red',
           hidden: !onDeleteAllocation || !user.hasDeleteRole(UserRoles.build),
           onClick: () => {
-            onDeleteAllocation?.(record.pk);
+            onDeleteAllocation?.(allocation.pk);
           }
         },
         RowViewAction({
           title: t`View Stock Item`,
           modelType: ModelType.stockitem,
-          modelId: record.stock_item,
+          modelId: allocation.stock_item,
           navigate: navigate
         })
       ];
@@ -156,9 +260,9 @@ export default function BuildLineTable({
   output,
   params = {}
 }: Readonly<{
-  build: any;
-  output?: any;
-  params?: any;
+  build: BuildOrderRecord;
+  output?: BuildOutputRecord;
+  params?: Record<string, unknown>;
 }>) {
   const user = useUserState();
   const navigate = useNavigate();
@@ -227,9 +331,10 @@ export default function BuildLineTable({
     ];
   }, []);
 
-  const renderAvailableColumn = useCallback((record: any) => {
+  const renderAvailableColumn = useCallback((r: Record<string, unknown>) => {
+    const record = r as BuildLineRecord;
     const bom_item = record?.bom_item_detail ?? {};
-    const extra: any[] = [];
+    const extra: ReactNode[] = [];
     let available = record?.available_stock;
 
     // Account for substitute stock
@@ -317,7 +422,8 @@ export default function BuildLineTable({
         ordering: 'part',
         sortable: true,
         switchable: false,
-        render: (record: any) => {
+        render: (r: Record<string, unknown>) => {
+          const record = r as BuildLineRecord;
           const hasAllocatedItems = record.allocatedQuantity > 0;
 
           return (
@@ -389,7 +495,8 @@ export default function BuildLineTable({
         title: t`Unit Quantity`,
         defaultVisible: false,
         ordering: 'unit_quantity',
-        render: (record: any) => {
+        render: (r: Record<string, unknown>) => {
+          const record = r as BuildLineRecord;
           return (
             <Group justify='space-between' wrap='nowrap'>
               <Text>{record.bom_item_detail?.quantity}</Text>
@@ -406,9 +513,10 @@ export default function BuildLineTable({
         sortable: true,
         defaultVisible: false,
         switchable: false,
-        render: (record: any) => {
+        render: (r: Record<string, unknown>) => {
+          const record = r as BuildLineRecord;
           // Include information about the BOM item (if available)
-          const extra: any[] = [];
+          const extra: ReactNode[] = [];
 
           if (record?.bom_item_detail?.setup_quantity) {
             extra.push(
@@ -463,7 +571,8 @@ export default function BuildLineTable({
         accessor: 'in_production',
         sortable: true,
         ordering: 'scheduled_to_build',
-        render: (record: any) => {
+        render: (r: Record<string, unknown>) => {
+          const record = r as BuildLineRecord;
           if (record.scheduled_to_build > 0) {
             return (
               <ProgressBar
@@ -488,7 +597,8 @@ export default function BuildLineTable({
         sortable: true,
         hidden: !isActive,
         minWidth: 125,
-        render: (record: any) => {
+        render: (r: Record<string, unknown>) => {
+          const record = r as BuildLineRecord;
           if (record?.bom_item_detail?.consumable) {
             return (
               <Text
@@ -503,7 +613,7 @@ export default function BuildLineTable({
 
           if (output?.pk) {
             // If an output is specified, we show the allocated quantity for that output
-            required = record.bom_item_detail?.quantity;
+            required = record.bom_item_detail?.quantity ?? 0;
           }
 
           if (allocated <= 0 && required <= 0) {
@@ -533,7 +643,8 @@ export default function BuildLineTable({
         sortable: true,
         hidden: !!output?.pk,
         minWidth: 125,
-        render: (record: any) => {
+        render: (r: Record<string, unknown>) => {
+          const record = r as BuildLineRecord;
           return record?.bom_item_detail?.consumable ? (
             <Text style={{ fontStyle: 'italic' }}>{t`Consumable item`}</Text>
           ) : (
@@ -553,11 +664,11 @@ export default function BuildLineTable({
     modalId: 'new-build-order'
   });
 
-  const [initialData, setInitialData] = useState<any>({});
+  const [initialData, setInitialData] = useState<Record<string, unknown>>({});
 
   const [selectedLine, setSelectedLine] = useState<number | null>(null);
 
-  const [selectedRows, setSelectedRows] = useState<any[]>([]);
+  const [selectedRows, setSelectedRows] = useState<BuildLineRecord[]>([]);
 
   const newBuildOrder = useCreateApiFormModal({
     url: ApiEndpoints.build_order_list,
@@ -671,7 +782,7 @@ export default function BuildLineTable({
     )
   });
 
-  const [partsToOrder, setPartsToOrder] = useState<any[]>([]);
+  const [partsToOrder, setPartsToOrder] = useState<PartDetail[]>([]);
 
   const orderPartsWizard = OrderPartsWizard({
     parts: partsToOrder
@@ -687,8 +798,9 @@ export default function BuildLineTable({
   });
 
   const rowActions = useCallback(
-    (record: any): RowAction[] => {
-      const part = record.part_detail ?? {};
+    (r: Record<string, unknown>): RowAction[] => {
+      const record = r as BuildLineRecord;
+      const part = record.part_detail ?? ({} as PartDetail);
       const in_production = build.status == buildStatus.PRODUCTION;
       const consumable: boolean = record.bom_item_detail?.consumable ?? false;
       const trackable: boolean = part?.trackable ?? false;
@@ -769,7 +881,7 @@ export default function BuildLineTable({
           hidden: !canOrder,
           color: 'blue',
           onClick: () => {
-            setPartsToOrder([record.part_detail]);
+            setPartsToOrder([record.part_detail as PartDetail]);
             orderPartsWizard.openWizard();
           }
         },
@@ -821,12 +933,13 @@ export default function BuildLineTable({
         color='blue'
         tooltip={t`Order Parts`}
         onClick={() => {
+          const records = table.selectedRecords as BuildLineRecord[];
           setPartsToOrder(
-            table.selectedRecords
+            records
               .filter(
                 (r) => r.part_detail?.purchaseable && r.part_detail?.active
               )
-              .map((r) => r.part_detail)
+              .map((r) => r.part_detail as PartDetail)
           );
           orderPartsWizard.openWizard();
         }}
@@ -839,7 +952,7 @@ export default function BuildLineTable({
         disabled={!table.hasSelectedRecords}
         color='green'
         onClick={() => {
-          let rows = table.selectedRecords
+          let rows = (table.selectedRecords as BuildLineRecord[])
             .filter((r) => r.allocatedQuantity < r.requiredQuantity)
             .filter((r) => !r.bom_item_detail?.consumable);
 
@@ -873,7 +986,7 @@ export default function BuildLineTable({
         disabled={!table.hasSelectedRecords}
         color='green'
         onClick={() => {
-          setSelectedRows(table.selectedRecords);
+          setSelectedRows(table.selectedRecords as BuildLineRecord[]);
           consumeLines.open();
         }}
       />
@@ -894,25 +1007,28 @@ export default function BuildLineTable({
    * - Pre-calculate the "requiredQuantity" and "allocatedQuantity" fields
    */
   const formatRecords = useCallback(
-    (records: any[]): any[] => {
+    (rawRecords: Record<string, unknown>[]): Record<string, unknown>[] => {
+      const records = rawRecords as BuildLineRecord[];
       return records.map((record) => {
         let allocations = [...record.allocations];
 
         // If an output is specified, filter the allocations to only show those for the selected output
         if (output?.pk) {
-          allocations = allocations.filter((a) => a.install_into == output.pk);
+          allocations = allocations.filter(
+            (a: BuildAllocation) => a.install_into == output.pk
+          );
         }
 
         let allocatedQuantity = 0;
         let requiredQuantity = record.quantity;
 
         // Calculate the total allocated quantity
-        allocations.forEach((a) => {
+        allocations.forEach((a: BuildAllocation) => {
           allocatedQuantity += a.quantity;
         });
 
         // Calculate the required quantity (based on the build output)
-        if (output?.quantity && record.bom_item_detail) {
+        if (output?.quantity && record.bom_item_detail?.quantity) {
           requiredQuantity = output.quantity * record.bom_item_detail.quantity;
         }
 
@@ -928,30 +1044,35 @@ export default function BuildLineTable({
   );
 
   // Control row expansion
-  const rowExpansion: DataTableRowExpansionProps<any> = useMemo(() => {
-    return {
-      allowMultiple: true,
-      expandable: ({ record }: { record: any }) => {
-        // Only items with allocated stock can be expanded
-        return table.isRowExpanded(record.pk) || record.allocatedQuantity > 0;
-      },
-      content: ({ record }: { record: any }) => {
-        return (
-          <BuildLineSubTable
-            lineItem={record}
-            onEditAllocation={(pk: number) => {
-              setSelectedAllocation(pk);
-              editAllocation.open();
-            }}
-            onDeleteAllocation={(pk: number) => {
-              setSelectedAllocation(pk);
-              deleteAllocation.open();
-            }}
-          />
-        );
-      }
-    };
-  }, [table.isRowExpanded, output]);
+  const rowExpansion: DataTableRowExpansionProps<Record<string, unknown>> =
+    useMemo(() => {
+      return {
+        allowMultiple: true,
+        expandable: ({ record }: { record: Record<string, unknown> }) => {
+          const row = record as BuildLineRecord;
+          // Only items with allocated stock can be expanded
+          return (
+            table.isRowExpanded(row.pk) || row.allocatedQuantity > 0
+          );
+        },
+        content: ({ record }: { record: Record<string, unknown> }) => {
+          const row = record as BuildLineRecord;
+          return (
+            <BuildLineSubTable
+              lineItem={row}
+              onEditAllocation={(pk: number) => {
+                setSelectedAllocation(pk);
+                editAllocation.open();
+              }}
+              onDeleteAllocation={(pk: number) => {
+                setSelectedAllocation(pk);
+                deleteAllocation.open();
+              }}
+            />
+          );
+        }
+      };
+    }, [table.isRowExpanded, output]);
 
   return (
     <>

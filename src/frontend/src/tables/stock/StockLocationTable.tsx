@@ -27,7 +27,7 @@ import { InvenTreeTable } from '../InvenTreeTable';
 /**
  * Stock location table
  */
-export function StockLocationTable({ parentId }: Readonly<{ parentId?: any }>) {
+export function StockLocationTable({ parentId }: Readonly<{ parentId?: number }>) {
   const table = useTable('stocklocation');
   const user = useUserState();
 
@@ -58,7 +58,7 @@ export function StockLocationTable({ parentId }: Readonly<{ parentId?: any }>) {
         description: t`Filter by location type`,
         apiUrl: apiUrl(ApiEndpoints.stock_location_type_list),
         model: ModelType.stocklocationtype,
-        modelRenderer: (instance: any) => instance.name
+        modelRenderer: (instance: Record<string, unknown>) => instance.name as string
       }
     ];
   }, []);
@@ -68,10 +68,10 @@ export function StockLocationTable({ parentId }: Readonly<{ parentId?: any }>) {
       {
         accessor: 'name',
         switchable: false,
-        render: (record: any) => (
+        render: (record: Record<string, unknown>) => (
           <Group gap='xs'>
-            {record.icon && <ApiIcon name={record.icon} />}
-            {record.name}
+            {typeof record.icon === 'string' && <ApiIcon name={record.icon} />}
+            {String(record.name ?? '')}
           </Group>
         )
       },
@@ -95,7 +95,7 @@ export function StockLocationTable({ parentId }: Readonly<{ parentId?: any }>) {
       {
         accessor: 'location_type',
         sortable: false,
-        render: (record: any) => record.location_type_detail?.name
+        render: (record: Record<string, unknown>) => (record.location_type_detail as Record<string, unknown> | undefined)?.name as string
       }
     ];
   }, []);
@@ -120,12 +120,12 @@ export function StockLocationTable({ parentId }: Readonly<{ parentId?: any }>) {
     pk: selectedLocation,
     title: t`Edit Stock Location`,
     fields: stockLocationFields(),
-    onFormSuccess: (record: any) => table.updateRecord(record)
+    onFormSuccess: (record: Record<string, unknown>) => table.updateRecord(record)
   });
 
   const setParent = useBulkEditApiFormModal({
     url: ApiEndpoints.stock_location_list,
-    items: table.selectedIds,
+    items: table.selectedIds as number[],
     title: t`Set Parent Location`,
     fields: {
       parent: {}
@@ -165,14 +165,14 @@ export function StockLocationTable({ parentId }: Readonly<{ parentId?: any }>) {
   }, [user, table.hasSelectedRecords]);
 
   const rowActions = useCallback(
-    (record: any): RowAction[] => {
+    (record: Record<string, unknown>): RowAction[] => {
       const can_edit = user.hasChangeRole(UserRoles.stock_location);
 
       return [
         RowEditAction({
           hidden: !can_edit,
           onClick: () => {
-            setSelectedLocation(record.pk);
+            setSelectedLocation(record.pk as number);
             editLocation.open();
           }
         })

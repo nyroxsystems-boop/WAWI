@@ -91,7 +91,7 @@ export function MachineDriverTable({
         },
         dataFormatter: (data: any) => {
           if (machineType) {
-            return data.filter((d: any) => d.machine_type === machineType);
+            return data.filter((d: { machine_type?: string }) => d.machine_type === machineType);
           }
           return data;
         }
@@ -390,7 +390,7 @@ export function MachineTypeListTable({
       <InvenTreeTable
         url={apiUrl(ApiEndpoints.machine_types_list)}
         tableState={table}
-        columns={machineTypeTableColumns}
+        columns={machineTypeTableColumns as TableColumn[]}
         props={{
           ...props,
           enableDownload: false,

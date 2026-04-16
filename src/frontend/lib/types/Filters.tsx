@@ -44,14 +44,14 @@ export type TableFilter = {
   type?: TableFilterType;
   choices?: TableFilterChoice[];
   choiceFunction?: () => TableFilterChoice[];
-  defaultValue?: any;
-  value?: any;
-  displayValue?: any;
+  defaultValue?: unknown;
+  value?: unknown;
+  displayValue?: unknown;
   active?: boolean;
   apiUrl?: string;
-  apiFilter?: Record<string, any>;
+  apiFilter?: Record<string, unknown>;
   model?: ModelType;
-  modelRenderer?: (instance: any) => string;
+  modelRenderer?: (instance: Record<string, unknown>) => string;
 };
 
 /*

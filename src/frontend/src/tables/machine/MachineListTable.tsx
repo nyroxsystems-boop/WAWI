@@ -27,8 +27,7 @@ import { YesNoButton } from '@lib/components/YesNoButton';
 import { ApiEndpoints } from '@lib/enums/ApiEndpoints';
 import { apiUrl } from '@lib/functions/Api';
 import { RowDeleteAction, RowEditAction, formatDecimal } from '@lib/index';
-import type { RowAction, TableColumn } from '@lib/types/Tables';
-import type { InvenTreeTableProps } from '@lib/types/Tables';
+import type { InvenTreeTableProps, RowAction, TableColumn, TableRecord } from '@lib/types/Tables';
 import { Trans } from '@lingui/react/macro';
 import { api } from '../../App';
 import {
@@ -711,7 +710,7 @@ export function MachineListTable({
     table: table
   });
 
-  const rowActions = useCallback((record: any): RowAction[] => {
+  const rowActions = useCallback((record: TableRecord): RowAction[] => {
     return [
       {
         icon: <IconRefresh />,
@@ -778,7 +777,7 @@ export function MachineListTable({
       <InvenTreeTable
         url={apiUrl(ApiEndpoints.machine_list)}
         tableState={table}
-        columns={machineTableColumns}
+        columns={machineTableColumns as TableColumn[]}
         props={{
           ...props,
           enableDownload: false,

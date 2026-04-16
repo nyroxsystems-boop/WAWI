@@ -289,7 +289,7 @@ export function ProjectCodeFilter(): TableFilter {
     type: 'api',
     apiUrl: apiUrl(ApiEndpoints.project_code_list),
     model: ModelType.projectcode,
-    modelRenderer: (instance) => instance.code
+    modelRenderer: (instance) => instance.code as string
   };
 }
 
@@ -309,7 +309,7 @@ export function OwnerFilter({
     type: 'api',
     apiUrl: apiUrl(ApiEndpoints.owner_list),
     model: ModelType.owner,
-    modelRenderer: (instance: any) => instance.name
+    modelRenderer: (instance) => instance.name as string
   };
 }
 
@@ -337,7 +337,7 @@ export function UserFilter({
     type: 'api',
     apiUrl: apiUrl(ApiEndpoints.user_list),
     model: ModelType.user,
-    modelRenderer: (instance: any) => instance.username
+    modelRenderer: (instance) => instance.username as string
   };
 }
 
@@ -349,7 +349,7 @@ export function ManufacturerFilter(): TableFilter {
     type: 'api',
     apiUrl: apiUrl(ApiEndpoints.company_list),
     model: ModelType.company,
-    modelRenderer: (instance: any) => instance.name,
+    modelRenderer: (instance) => instance.name as string,
     apiFilter: { is_manufacturer: true }
   };
 }
@@ -362,7 +362,7 @@ export function SupplierFilter(): TableFilter {
     type: 'api',
     apiUrl: apiUrl(ApiEndpoints.company_list),
     model: ModelType.company,
-    modelRenderer: (instance: any) => instance.name,
+    modelRenderer: (instance) => instance.name as string,
     apiFilter: { is_supplier: true }
   };
 }
@@ -390,7 +390,7 @@ export function PartCategoryFilter(): TableFilter {
     description: t`Filter by part category`,
     apiUrl: apiUrl(ApiEndpoints.category_list),
     model: ModelType.partcategory,
-    modelRenderer: (instance: any) => instance.name
+    modelRenderer: (instance) => instance.name as string
   };
 }
 
@@ -401,6 +401,6 @@ export function StockLocationFilter(): TableFilter {
     description: t`Filter by stock location`,
     apiUrl: apiUrl(ApiEndpoints.stock_location_list),
     model: ModelType.stocklocation,
-    modelRenderer: (instance: any) => instance.name
+    modelRenderer: (instance) => instance.name as string
   };
 }

@@ -61,6 +61,49 @@ import {
 import { useGlobalSettingsState } from '../states/SettingsStates';
 import { StatusFilterOptions } from '../tables/Filter';
 
+/** Partial detail for a part associated with a stock item. */
+interface PartDetail {
+  pk?: number;
+  name?: string;
+  thumbnail?: string;
+  default_location?: number | null;
+  category_default_location?: number | null;
+  default_expiry?: number;
+  salable?: boolean;
+  trackable?: boolean;
+  purchaseable?: boolean;
+}
+
+/** Partial detail for a stock location. */
+interface LocationDetail {
+  pathstring?: string;
+}
+
+/** Record shape for a stock item as returned by the API. */
+interface StockItemRecord {
+  pk: number;
+  part: number;
+  part_detail?: PartDetail;
+  location?: number | null;
+  location_detail?: LocationDetail;
+  quantity?: number;
+  serial?: string | null;
+  batch?: string;
+  status?: number;
+  status_custom_key?: number;
+  packaging?: string;
+  in_stock?: boolean;
+}
+
+/** Record shape for a part instance (related field record from part API). */
+interface PartInstanceRecord {
+  pk?: number;
+  trackable?: boolean;
+  purchaseable?: boolean;
+  default_expiry?: number;
+  [key: string]: unknown;
+}
+
 /**
  * Construct a set of fields for creating / editing a StockItem instance
  */
@@ -73,7 +116,7 @@ export function useStockFields({
   modalId
 }: {
   partId?: number;
-  stockItem?: any;
+  stockItem?: StockItemRecord;
   modalId: string;
   create: boolean;
   supplierPartId?: number;
@@ -82,7 +125,7 @@ export function useStockFields({
   const globalSettings = useGlobalSettingsState();
 
   // Keep track of the "part" instance
-  const [partInstance, setPartInstance] = useState<any>({});
+  const [partInstance, setPartInstance] = useState<PartInstanceRecord>({});
 
   const [supplierPart, setSupplierPart] = useState<number | null>(
     supplierPartId ?? null
@@ -147,7 +190,7 @@ export function useStockFields({
         },
         onValueChange: (value, record) => {
           // Update the tracked part instance
-          setPartInstance(record);
+          setPartInstance(record as PartInstanceRecord);
 
           serialGenerator.update({
             part: value
@@ -161,7 +204,8 @@ export function useStockFields({
           setSupplierPart(null);
 
           // Adjust the 'expiry date' for the stock item
-          const expiry_days = record?.default_expiry ?? 0;
+          const expiry_days =
+            (record as PartInstanceRecord | undefined)?.default_expiry ?? 0;
 
           if (expiry_days && expiry_days > 0) {
             // Adjust the expiry date based on the part default expiry
@@ -340,7 +384,7 @@ export function useStockItemUninstallFields(): ApiFormFieldSet {
 export function useStockItemInstallFields({
   stockItem
 }: {
-  stockItem: any;
+  stockItem: StockItemRecord;
 }): ApiFormFieldSet {
   const globalSettings = useGlobalSettingsState();
 
@@ -423,8 +467,8 @@ function StockItemDefaultMove({
   stockItem,
   value
 }: Readonly<{
-  stockItem: any;
-  value: any;
+  stockItem: StockItemRecord;
+  value: StockItemQuantity;
 }>) {
   const { data } = useSuspenseQuery({
     queryKey: [
@@ -459,10 +503,10 @@ function StockItemDefaultMove({
     <Flex gap='sm' justify='space-evenly' align='center'>
       <Flex gap='sm' direction='column' align='center'>
         <Text>
-          {value} x {stockItem.part_detail.name}
+          {value} x {stockItem.part_detail?.name}
         </Text>
         <Thumbnail
-          src={stockItem.part_detail.thumbnail}
+          src={stockItem.part_detail?.thumbnail}
           size={80}
           align='center'
         />
@@ -479,7 +523,7 @@ function StockItemDefaultMove({
 }
 
 function moveToDefault(
-  stockItem: any,
+  stockItem: StockItemRecord,
   value: StockItemQuantity,
   refresh: () => void
 ) {
@@ -519,11 +563,15 @@ function moveToDefault(
 }
 
 type StockAdjustmentItemWithRecord = {
-  obj: any;
+  obj: StockItemRecord;
 } & StockAdjustmentItem;
 
 type TableFieldRefreshFn = (idx: number) => void;
-type TableFieldChangeFn = (idx: number, key: string, value: any) => void;
+type TableFieldChangeFn = (
+  idx: number,
+  key: string,
+  value: string | number | undefined
+) => void;
 
 type StockRow = {
   item: StockAdjustmentItemWithRecord;
@@ -547,7 +595,7 @@ function StockOperationsRow({
   add?: boolean;
   setMax?: boolean;
   merge?: boolean;
-  record?: any;
+  record?: StockItemRecord;
 }) {
   const statusOptions: ApiFormFieldChoice[] = useMemo(() => {
     return (
@@ -570,7 +618,11 @@ function StockOperationsRow({
     props.removeFn(props.idx);
   };
 
-  const callChangeFn = (idx: number, key: string, value: any) => {
+  const callChangeFn = (
+    idx: number,
+    key: string,
+    value: string | number | undefined
+  ) => {
     setTimeout(() => props.changeFn(idx, key, value), 0);
   };
 
@@ -640,7 +692,7 @@ function StockOperationsRow({
           <Group grow justify='space-between' wrap='nowrap'>
             <Text>{stockString}</Text>
             <StatusRenderer
-              status={record.status_custom_key}
+              status={record.status_custom_key ?? record.status ?? 0}
               type={ModelType.stockitem}
             />
           </Group>
@@ -652,7 +704,7 @@ function StockOperationsRow({
               fieldDefinition={{
                 field_type: 'number',
                 value: quantity,
-                onValueChange: (value: any) => {
+                onValueChange: (value: number) => {
                   setQuantity(value);
                   props.changeFn(props.idx, 'quantity', value);
                 }
@@ -702,9 +754,13 @@ function StockOperationsRow({
       {changeStatus && (
         <TableFieldExtraRow
           visible={statusOpen}
-          onValueChange={(value: any) => {
-            setStatus(value);
-            props.changeFn(props.idx, 'status', value || undefined);
+          onValueChange={(value: number | string | undefined) => {
+            setStatus(value as number | undefined);
+            props.changeFn(
+              props.idx,
+              'status',
+              (value as number | undefined) || undefined
+            );
           }}
           fieldName='status'
           fieldDefinition={{
@@ -719,7 +775,7 @@ function StockOperationsRow({
       {transfer && (
         <TableFieldExtraRow
           visible={transfer && packagingOpen}
-          onValueChange={(value: any) => {
+          onValueChange={(value: string | undefined) => {
             props.changeFn(props.idx, 'packaging', value || undefined);
           }}
           fieldName='packaging'
@@ -744,7 +800,7 @@ type StockAdjustmentItem = {
   packaging?: string;
 };
 
-function mapAdjustmentItems(items: any[]) {
+function mapAdjustmentItems(items: StockItemRecord[]) {
   const mappedItems: StockAdjustmentItemWithRecord[] = items.map((elem) => {
     return {
       pk: elem.pk,
@@ -759,7 +815,7 @@ function mapAdjustmentItems(items: any[]) {
   return mappedItems;
 }
 
-function stockTransferFields(items: any[]): ApiFormFieldSet {
+function stockTransferFields(items: StockItemRecord[]): ApiFormFieldSet {
   if (!items) {
     return {};
   }
@@ -807,7 +863,7 @@ function stockTransferFields(items: any[]): ApiFormFieldSet {
   return fields;
 }
 
-function stockReturnFields(items: any[]): ApiFormFieldSet {
+function stockReturnFields(items: StockItemRecord[]): ApiFormFieldSet {
   if (!items) {
     return {};
   }
@@ -855,7 +911,7 @@ function stockReturnFields(items: any[]): ApiFormFieldSet {
   return fields;
 }
 
-function stockRemoveFields(items: any[]): ApiFormFieldSet {
+function stockRemoveFields(items: StockItemRecord[]): ApiFormFieldSet {
   if (!items) {
     return {};
   }
@@ -902,7 +958,7 @@ function stockRemoveFields(items: any[]): ApiFormFieldSet {
   return fields;
 }
 
-function stockAddFields(items: any[]): ApiFormFieldSet {
+function stockAddFields(items: StockItemRecord[]): ApiFormFieldSet {
   if (!items) {
     return {};
   }
@@ -948,7 +1004,7 @@ function stockAddFields(items: any[]): ApiFormFieldSet {
   return fields;
 }
 
-function stockCountFields(items: any[]): ApiFormFieldSet {
+function stockCountFields(items: StockItemRecord[]): ApiFormFieldSet {
   if (!items) {
     return {};
   }
@@ -986,7 +1042,7 @@ function stockCountFields(items: any[]): ApiFormFieldSet {
   return fields;
 }
 
-function stockChangeStatusFields(items: any[]): ApiFormFieldSet {
+function stockChangeStatusFields(items: StockItemRecord[]): ApiFormFieldSet {
   if (!items) {
     return {};
   }
@@ -1031,7 +1087,7 @@ function stockChangeStatusFields(items: any[]): ApiFormFieldSet {
   return fields;
 }
 
-function stockMergeFields(items: any[]): ApiFormFieldSet {
+function stockMergeFields(items: StockItemRecord[]): ApiFormFieldSet {
   if (!items) {
     return {};
   }
@@ -1080,7 +1136,7 @@ function stockMergeFields(items: any[]): ApiFormFieldSet {
   return fields;
 }
 
-function stockAssignFields(items: any[]): ApiFormFieldSet {
+function stockAssignFields(items: StockItemRecord[]): ApiFormFieldSet {
   if (!items) {
     return {};
   }
@@ -1125,7 +1181,7 @@ function stockAssignFields(items: any[]): ApiFormFieldSet {
   return fields;
 }
 
-function stockDeleteFields(items: any[]): ApiFormFieldSet {
+function stockDeleteFields(items: StockItemRecord[]): ApiFormFieldSet {
   if (!items) {
     return {};
   }
@@ -1185,24 +1241,27 @@ function useStockOperationModal({
 }: {
   items?: object;
   pk?: number;
-  filters?: any;
+  filters?: Record<string, boolean | string | number | undefined>;
   model: ModelType | string;
   refresh: () => void;
-  fieldGenerator: (items: any[]) => ApiFormFieldSet;
+  fieldGenerator: (items: StockItemRecord[]) => ApiFormFieldSet;
   endpoint: ApiEndpoints;
   title: string;
   preFormContent?: JSX.Element;
   successMessage?: string;
   modalFunc?: apiModalFunc;
 }) {
-  const baseParams: any = {
+  const baseParams: Record<string, boolean | string | number | undefined> = {
     part_detail: true,
     location_detail: true,
     cascade: false
   };
 
   const params = useMemo(() => {
-    const query_params: any = {
+    const query_params: Record<
+      string,
+      boolean | string | number | undefined
+    > = {
       ...baseParams,
       ...(filters ?? {})
     };
@@ -1429,7 +1488,7 @@ export function useTestResultFields({
   editTemplate?: boolean;
 }): ApiFormFieldSet {
   // Valid field choices
-  const [choices, setChoices] = useState<any[]>([]);
+  const [choices, setChoices] = useState<ApiFormFieldChoice[]>([]);
 
   // Field type for the "value" input
   const [fieldType, setFieldType] = useState<'string' | 'choice'>('string');
@@ -1453,7 +1512,10 @@ export function useTestResultFields({
           include_inherited: true,
           part: partId
         },
-        onValueChange: (value: any, record: any) => {
+        onValueChange: (
+          _value: number | undefined,
+          record?: { choices?: string; [key: string]: unknown }
+        ) => {
           // Adjust the type of the "value" field based on the selected template
           if (record?.choices) {
             const _choices: string[] = record.choices.split(',');
@@ -1462,7 +1524,7 @@ export function useTestResultFields({
               setChoices(
                 _choices.map((choice) => {
                   return {
-                    label: choice.trim(),
+                    display_name: choice.trim(),
                     value: choice.trim()
                   };
                 })

@@ -9,6 +9,14 @@ import type { ModelType } from '../enums/ModelType';
 import type { FilterSetState, TableFilter } from './Filters';
 import type { ApiFormFieldType } from './Forms';
 
+/**
+ * Generic record type for table data from API responses.
+ * Uses `any` intentionally since API data is inherently untyped at the table framework level.
+ * Type safety is provided through the generic parameter on TableColumnProps and InvenTreeTableProps.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type TableRecord = Record<string, any>;
+
 /*
  * Type definition for representing the state of a table:
  *
@@ -52,13 +60,13 @@ export type TableState = {
   queryFilters: URLSearchParams;
   setQueryFilters: SetURLSearchParams;
   clearQueryFilters: () => void;
-  expandedRecords: any[];
-  setExpandedRecords: (records: any[]) => void;
+  expandedRecords: number[];
+  setExpandedRecords: (records: number[]) => void;
   isRowExpanded: (pk: number) => boolean;
-  selectedRecords: any[];
-  selectedIds: any[];
+  selectedRecords: TableRecord[];
+  selectedIds: (string | number)[];
   hasSelectedRecords: boolean;
-  setSelectedRecords: (records: any[]) => void;
+  setSelectedRecords: (records: TableRecord[]) => void;
   clearSelectedRecords: () => void;
   searchTerm: string;
   setSearchTerm: (term: string) => void;
@@ -66,9 +74,9 @@ export type TableState = {
   setRecordCount: (count: number) => void;
   page: number;
   setPage: (page: number) => void;
-  records: any[];
-  setRecords: (records: any[]) => void;
-  updateRecord: (record: any) => void;
+  records: TableRecord[];
+  setRecords: (records: TableRecord[]) => void;
+  updateRecord: (record: TableRecord) => void;
   hiddenColumns: string[];
   setHiddenColumns: (columns: string[]) => void;
   idAccessor?: string;
@@ -100,7 +108,7 @@ export type TableState = {
  * @param extra - Extra data to pass to the render function
  * @param noContext - Disable context menu for this column
  */
-export type TableColumnProps<T = any> = {
+export type TableColumnProps<T = TableRecord> = {
   accessor?: string;
   title?: string;
   ordering?: string;
@@ -110,8 +118,10 @@ export type TableColumnProps<T = any> = {
   defaultVisible?: boolean;
   editable?: boolean;
   definition?: ApiFormFieldType;
-  render?: (record: T, index?: number) => any;
-  filter?: any;
+  render?: (record: T, index?: number) => ReactNode;
+  filter?:
+    | ReactNode
+    | ((params: { close: () => void }) => ReactNode);
   filtering?: boolean;
   width?: number;
   minWidth?: string | number;
@@ -119,8 +129,8 @@ export type TableColumnProps<T = any> = {
   noWrap?: boolean;
   ellipsis?: boolean;
   textAlign?: 'left' | 'center' | 'right';
-  cellsStyle?: any;
-  extra?: any;
+  cellsStyle?: (record: T, index: number) => MantineStyleProp | undefined;
+  extra?: Record<string, unknown>;
   noContext?: boolean;
   style?: MantineStyleProp;
 };
@@ -128,7 +138,7 @@ export type TableColumnProps<T = any> = {
 /**
  * Interface for the table column definition
  */
-export type TableColumn<T = any> = {
+export type TableColumn<T = TableRecord> = {
   accessor: string; // The key in the record to access
 } & TableColumnProps<T>;
 
@@ -138,7 +148,7 @@ export type RowAction = {
   tooltip?: string;
   color?: string;
   icon?: ReactNode;
-  onClick?: (event: any) => void;
+  onClick?: (event: React.MouseEvent) => void;
   hidden?: boolean;
   disabled?: boolean;
 };
@@ -154,7 +164,7 @@ export type RowViewProps = RowAction & RowModelProps;
 /**
  * Set of optional properties which can be passed to an InvenTreeTable component
  *
- * @param params : any - Base query parameters
+ * @param params : Record<string, unknown> - Base query parameters
  * @param tableState : TableState - State manager for the table
  * @param defaultSortColumn : string - Default column to sort by
  * @param noRecordsText : string - Text to display when no records are found
@@ -170,20 +180,20 @@ export type RowViewProps = RowAction & RowModelProps;
  * @param enableRefresh : boolean - Enable refresh actions
  * @param enableColumnSwitching : boolean - Enable column switching
  * @param enableColumnCaching : boolean - Enable caching of column names via API
- * @param barcodeActions : any[] - List of barcode actions
+ * @param barcodeActions : ReactNode[] - List of barcode actions
  * @param tableFilters : TableFilter[] - List of custom filters
- * @param tableActions : any[] - List of custom action groups
+ * @param tableActions : ReactNode[] - List of custom action groups
  * @param detailAction: boolean - Enable detail action for each row (default = true)
- * @param dataFormatter : (data: any) => any - Callback function to reformat data returned by server (if not in default format)
- * @param rowActions : (record: any) => RowAction[] - Callback function to generate row actions
- * @param onRowClick : (record: any, index: number, event: any) => void - Callback function when a row is clicked
- * @param onCellClick : (event: any, record: any, index: number, column: any, columnIndex: number) => void - Callback function when a cell is clicked
+ * @param dataFormatter : (data: T[]) => T[] - Callback function to reformat data returned by server (if not in default format)
+ * @param rowActions : (record: T) => RowAction[] - Callback function to generate row actions
+ * @param onRowClick : (record: T, index: number, event: React.MouseEvent) => void - Callback function when a row is clicked
+ * @param onCellClick : DataTableCellClickHandler<T> - Callback function when a cell is clicked
  * @param modelType: ModelType - The model type for the table
  * @param minHeight: number - Minimum height of the table (default 300px)
  * @param noHeader: boolean - Hide the table header
  */
-export type InvenTreeTableProps<T = any> = {
-  params?: any;
+export type InvenTreeTableProps<T = TableRecord> = {
+  params?: Record<string, unknown>;
   defaultSortColumn?: string;
   noRecordsText?: string;
   enableBulkDelete?: boolean;
@@ -203,15 +213,15 @@ export type InvenTreeTableProps<T = any> = {
   tableFilters?: TableFilter[];
   tableActions?: React.ReactNode[];
   rowExpansion?: DataTableRowExpansionProps<T>;
-  dataFormatter?: (data: any) => any;
+  dataFormatter?: (data: T[]) => T[];
   rowActions?: (record: T) => RowAction[];
   detailAction?: boolean;
-  onRowClick?: (record: T, index: number, event: any) => void;
+  onRowClick?: (record: T, index: number, event: React.MouseEvent) => void;
   onCellClick?: DataTableCellClickHandler<T>;
   modelType?: ModelType;
   rowStyle?: (record: T, index: number) => MantineStyleProp | undefined;
   modelField?: string;
-  onCellContextMenu?: (record: T, event: any) => void;
+  onCellContextMenu?: (record: T, event: React.MouseEvent) => void;
   minHeight?: number;
   noHeader?: boolean;
 };

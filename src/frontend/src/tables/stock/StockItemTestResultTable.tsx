@@ -7,7 +7,7 @@ import {
   IconInfoCircle
 } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
-import { DataTable, type DataTableRowExpansionProps } from 'mantine-datatable';
+import { DataTable, type DataTableColumn, type DataTableRowExpansionProps } from 'mantine-datatable';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { AddItemButton } from '@lib/components/AddItemButton';
@@ -23,7 +23,53 @@ import { UserRoles } from '@lib/enums/Roles';
 import { apiUrl } from '@lib/functions/Api';
 import type { TableFilter } from '@lib/types/Filters';
 import type { ApiFormFieldSet } from '@lib/types/Forms';
-import type { TableColumn } from '@lib/types/Tables';
+import type { TableColumn, TableColumnProps } from '@lib/types/Tables';
+
+interface TestTemplate {
+  pk: number;
+  test_name: string;
+  description?: string;
+  enabled?: boolean;
+  required?: boolean;
+  requires_value?: boolean;
+  requires_attachment?: boolean;
+  [key: string]: unknown;
+}
+
+interface StockTestResult {
+  pk: number;
+  template: number;
+  template_detail?: TestTemplate;
+  stock_item?: number;
+  test_name?: string;
+  result?: boolean;
+  value?: string;
+  attachment?: string;
+  notes?: string;
+  date?: string;
+  user?: number;
+  user_detail?: Record<string, unknown>;
+  test_station?: string;
+  started_datetime?: string;
+  finished_datetime?: string;
+  [key: string]: unknown;
+}
+
+interface TestResultRecord extends Partial<StockTestResult>, Partial<TestTemplate> {
+  pk: number;
+  templateId?: number;
+  results?: StockTestResult[];
+  enabled?: boolean;
+  result?: boolean;
+  stock_item?: number;
+  template_detail?: TestTemplate;
+  requires_attachment?: boolean;
+  requires_value?: boolean;
+  test_name?: string;
+  attachment?: string;
+  started_datetime?: string;
+  finished_datetime?: string;
+}
 import { AttachmentLink } from '../../components/items/AttachmentLink';
 import { useApi } from '../../contexts/ApiContext';
 import { formatDate } from '../../defaults/formatters';
@@ -87,24 +133,25 @@ export default function StockItemTestResultTable({
 
   // Format the test results based on the returned data
   const formatRecords = useCallback(
-    (records: any[]): any[] => {
+    (records: StockTestResult[]): TestResultRecord[] => {
       // Construct a list of test templates
-      const results =
-        testTemplates?.map((template: any) => {
+      const results: TestResultRecord[] =
+        testTemplates?.map((template: TestTemplate) => {
           return {
             ...template,
             templateId: template.pk,
-            results: []
+            results: [] as StockTestResult[]
           };
         }) ?? [];
 
       // If any of the tests results point to templates which we do not have, add them in
       records.forEach((record) => {
-        if (!results.find((r: any) => r.templateId == record.template)) {
+        if (!results.find((r: TestResultRecord) => r.templateId == record.template)) {
           results.push({
             ...record.template_detail,
+            pk: record.template_detail?.pk ?? record.pk,
             templateId: record.template,
-            results: []
+            results: [] as StockTestResult[]
           });
         }
       });
@@ -113,13 +160,13 @@ export default function StockItemTestResultTable({
       // Note that the results are sorted by oldest first,
       // to ensure that the most recent result is displayed "on top"
       records
-        .sort((a: any, b: any) => {
+        .sort((a: StockTestResult, b: StockTestResult) => {
           return a.pk > b.pk ? 1 : -1;
         })
         .forEach((record) => {
           // Find matching template
           const idx = results.findIndex(
-            (r: any) => r.templateId == record.template
+            (r: TestResultRecord) => r.templateId == record.template
           );
           if (idx >= 0) {
             results[idx] = {
@@ -127,7 +174,7 @@ export default function StockItemTestResultTable({
               ...record
             };
 
-            results[idx].results.push(record);
+            results[idx].results!.push(record);
           }
         });
 
@@ -144,7 +191,7 @@ export default function StockItemTestResultTable({
           title: t`Test`,
           switchable: false,
           sortable: true,
-          render: (record: any) => {
+          render: (record: TestResultRecord) => {
             const enabled = record.enabled ?? record.template_detail?.enabled;
             const installed =
               record.stock_item != undefined && record.stock_item != itemId;
@@ -156,7 +203,7 @@ export default function StockItemTestResultTable({
                 <Group gap='xs'>
                   {!child && (
                     <RowExpansionIcon
-                      enabled={multipleResults}
+                      enabled={multipleResults ?? false}
                       expanded={table.isRowExpanded(record.pk)}
                     />
                   )}
@@ -191,7 +238,7 @@ export default function StockItemTestResultTable({
           title: t`Result`,
           switchable: false,
           sortable: true,
-          render: (record: any) => {
+          render: (record: TestResultRecord) => {
             if (record.result === undefined) {
               return (
                 <Badge color='lightblue' variant='filled'>{t`No Result`}</Badge>
@@ -209,7 +256,7 @@ export default function StockItemTestResultTable({
         {
           accessor: 'attachment',
           title: t`Attachment`,
-          render: (record: any) =>
+          render: (record: TestResultRecord) =>
             record.attachment && (
               <AttachmentLink attachment={record.attachment} />
             ),
@@ -232,10 +279,10 @@ export default function StockItemTestResultTable({
           sortable: true,
           title: t`Started`,
           hidden: !includeTestStation,
-          render: (record: any) => {
+          render: (record: TestResultRecord) => {
             return (
               <Group justify='space-between'>
-                {formatDate(record.started_datetime, {
+                {formatDate(record.started_datetime ?? '', {
                   showTime: true,
                   showSeconds: true
                 })}
@@ -248,10 +295,10 @@ export default function StockItemTestResultTable({
           sortable: true,
           title: t`Finished`,
           hidden: !includeTestStation,
-          render: (record: any) => {
+          render: (record: TestResultRecord) => {
             return (
               <Group justify='space-between'>
-                {formatDate(record.finished_datetime, {
+                {formatDate(record.finished_datetime ?? '', {
                   showTime: true,
                   showSeconds: true
                 })}
@@ -264,8 +311,8 @@ export default function StockItemTestResultTable({
     [itemId, includeTestStation, table.expandedRecords]
   );
 
-  const tableColumns: TableColumn[] = useMemo(() => {
-    return constructTableColumns(false);
+  const tableColumns = useMemo(() => {
+    return constructTableColumns(false) as TableColumn[];
   }, [itemId, includeTestStation, table.expandedRecords]);
 
   const [selectedTemplate, setSelectedTemplate] = useState<number | undefined>(
@@ -345,7 +392,7 @@ export default function StockItemTestResultTable({
   );
 
   const rowActions = useCallback(
-    (record: any): RowAction[] => {
+    (record: TestResultRecord): RowAction[] => {
       if (record.stock_item != undefined && record.stock_item != itemId) {
         // Test results for other stock items cannot be edited
         return [];
@@ -361,7 +408,7 @@ export default function StockItemTestResultTable({
             record?.requires_attachment ||
             record?.requires_value ||
             record.result,
-          onClick: () => passTest(record.templateId)
+          onClick: () => passTest(record.templateId!)
         },
         {
           title: t`Add`,
@@ -437,8 +484,8 @@ export default function StockItemTestResultTable({
   }, [user]);
 
   // Row expansion controller
-  const rowExpansion: DataTableRowExpansionProps<any> = useMemo(() => {
-    const cols: any = [
+  const rowExpansion: DataTableRowExpansionProps<TestResultRecord> = useMemo(() => {
+    const cols = [
       ...constructTableColumns(true),
       {
         accessor: 'actions',
@@ -446,7 +493,7 @@ export default function StockItemTestResultTable({
         hidden: false,
         switchable: false,
         width: 50,
-        render: (record: any) => (
+        render: (record: TestResultRecord) => (
           <RowActions actions={rowActions(record) ?? []} />
         )
       }
@@ -454,13 +501,13 @@ export default function StockItemTestResultTable({
 
     return {
       allowMultiple: true,
-      expandable: ({ record }: { record: any }) => {
+      expandable: ({ record }: { record: TestResultRecord }) => {
         return (
           table.isRowExpanded(record.pk) ||
-          (record.results && record.results.length > 1)
+          (record.results != null && record.results.length > 1)
         );
       },
-      content: ({ record }: { record: any }) => {
+      content: ({ record }: { record: TestResultRecord }) => {
         if (!record || !record.results || record.results.length < 2) {
           return null;
         }
@@ -472,7 +519,7 @@ export default function StockItemTestResultTable({
             key={record.pk}
             idAccessor={'test'}
             noHeader
-            columns={cols}
+            columns={cols as DataTableColumn<StockTestResult>[]}
             records={results.slice(0, -1)}
           />
         );
@@ -490,7 +537,7 @@ export default function StockItemTestResultTable({
         tableState={table}
         columns={tableColumns}
         props={{
-          dataFormatter: formatRecords,
+          dataFormatter: formatRecords as (data: TestResultRecord[]) => TestResultRecord[],
           enablePagination: false,
           tableActions: tableActions,
           tableFilters: tableFilters,

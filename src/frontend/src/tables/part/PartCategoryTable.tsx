@@ -11,7 +11,7 @@ import { ModelType } from '@lib/enums/ModelType';
 import { UserRoles } from '@lib/enums/Roles';
 import { apiUrl } from '@lib/functions/Api';
 import type { TableFilter } from '@lib/types/Filters';
-import type { TableColumn } from '@lib/types/Tables';
+import type { TableColumn, TableRecord } from '@lib/types/Tables';
 import { ActionDropdown } from '../../components/items/ActionDropdown';
 import { ApiIcon } from '../../components/items/ApiIcon';
 import { partCategoryFields } from '../../forms/PartForms';
@@ -29,7 +29,7 @@ import { InvenTreeTable } from '../InvenTreeTable';
 /**
  * PartCategoryTable - Displays a table of part categories
  */
-export function PartCategoryTable({ parentId }: Readonly<{ parentId?: any }>) {
+export function PartCategoryTable({ parentId }: Readonly<{ parentId?: unknown }>) {
   const table = useTable('partcategory');
   const user = useUserState();
 
@@ -39,7 +39,7 @@ export function PartCategoryTable({ parentId }: Readonly<{ parentId?: any }>) {
         accessor: 'name',
         sortable: true,
         switchable: false,
-        render: (record: any) => (
+        render: (record: TableRecord) => (
           <Group gap='xs' wrap='nowrap' justify='space-between'>
             <Group gap='xs' wrap='nowrap'>
               {record.icon && <ApiIcon name={record.icon} />}
@@ -66,7 +66,7 @@ export function PartCategoryTable({ parentId }: Readonly<{ parentId?: any }>) {
         accessor: 'structural',
         sortable: true,
         defaultVisible: false,
-        render: (record: any) => {
+        render: (record: TableRecord) => {
           return <YesNoButton value={record.structural} />;
         }
       },
@@ -121,12 +121,12 @@ export function PartCategoryTable({ parentId }: Readonly<{ parentId?: any }>) {
     pk: selectedCategory,
     title: t`Edit Part Category`,
     fields: editCategoryFields,
-    onFormSuccess: (record: any) => table.updateRecord(record)
+    onFormSuccess: (record: TableRecord) => table.updateRecord(record)
   });
 
   const setParent = useBulkEditApiFormModal({
     url: ApiEndpoints.category_list,
-    items: table.selectedIds,
+    items: table.selectedIds as number[],
     title: t`Set Parent Category`,
     fields: {
       parent: {}
@@ -166,7 +166,7 @@ export function PartCategoryTable({ parentId }: Readonly<{ parentId?: any }>) {
   }, [user, table.hasSelectedRecords]);
 
   const rowActions = useCallback(
-    (record: any): RowAction[] => {
+    (record: TableRecord): RowAction[] => {
       const can_edit = user.hasChangeRole(UserRoles.part_category);
 
       return [

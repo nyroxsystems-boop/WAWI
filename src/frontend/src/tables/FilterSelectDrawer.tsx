@@ -55,7 +55,7 @@ function FilterItem({
           <Text size='xs'>{flt.description}</Text>
         </Stack>
         <Group justify='right'>
-          <Badge>{flt.displayValue ?? flt.value}</Badge>
+          <Badge>{String(flt.displayValue ?? flt.value ?? '')}</Badge>
           <Tooltip label={t`Remove filter`} withinPortal={true}>
             <CloseButton size='md' color='red' onClick={removeFilter} />
           </Tooltip>

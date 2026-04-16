@@ -279,7 +279,7 @@ export default function InvenTreeTableHeader({
                             wrap='nowrap'
                           >
                             <Text size='sm'>{filter.label}</Text>
-                            <Text size='xs'>{filter.displayValue}</Text>
+                            <Text size='xs'>{String(filter.displayValue ?? '')}</Text>
                           </Group>
                         ))}
                       </Stack>

@@ -10,7 +10,7 @@ import { UserRoles } from '@lib/enums/Roles';
 import { apiUrl } from '@lib/functions/Api';
 import { navigateToLink } from '@lib/functions/Navigation';
 import type { TableFilter } from '@lib/types/Filters';
-import type { TableColumn } from '@lib/types/Tables';
+import type { TableColumn, TableRecord } from '@lib/types/Tables';
 import { t } from '@lingui/core/macro';
 import { ActionIcon, Alert, Group, Stack, Text, Tooltip } from '@mantine/core';
 import { showNotification } from '@mantine/notifications';
@@ -52,7 +52,7 @@ import { InvenTreeTable } from '../InvenTreeTable';
 import { TableHoverCard } from '../TableHoverCard';
 
 // Calculate the total stock quantity available for a given BomItem
-function availableStockQuantity(record: any): number {
+function availableStockQuantity(record: TableRecord): number {
   // Base availability
   let available: number = record.available_stock;
 
@@ -74,7 +74,7 @@ export function BomTable({
 }: Readonly<{
   partId: number;
   partLocked?: boolean;
-  params?: any;
+  params?: Record<string, unknown>;
 }>) {
   const api = useApi();
   const user = useUserState();
@@ -93,7 +93,7 @@ export function BomTable({
         accessor: 'sub_part',
         switchable: false,
         sortable: true,
-        render: (record: any) => {
+        render: (record: TableRecord) => {
           const part = record.sub_part_detail;
           const extra = [];
 
@@ -156,7 +156,7 @@ export function BomTable({
         accessor: 'quantity',
         switchable: false,
         sortable: true,
-        render: (record: any) => {
+        render: (record: TableRecord) => {
           const quantity = formatDecimal(record.quantity);
           const units = record.sub_part_detail?.units;
 
@@ -180,7 +180,7 @@ export function BomTable({
         accessor: 'setup_quantity',
         defaultVisible: false,
         sortable: true,
-        render: (record: any) => {
+        render: (record: TableRecord) => {
           const setup_quantity = record.setup_quantity;
           const units = record.sub_part_detail?.units;
           if (setup_quantity == null || setup_quantity === 0) {
@@ -199,7 +199,7 @@ export function BomTable({
         accessor: 'attrition',
         defaultVisible: false,
         sortable: true,
-        render: (record: any) => {
+        render: (record: TableRecord) => {
           const attrition = record.attrition;
           if (attrition == null || attrition === 0) {
             return '-';
@@ -212,7 +212,7 @@ export function BomTable({
         accessor: 'rounding_multiple',
         defaultVisible: false,
         sortable: false,
-        render: (record: any) => {
+        render: (record: TableRecord) => {
           const units = record.sub_part_detail?.units;
           const multiple: number | null = record.round_up_multiple;
 
@@ -231,14 +231,14 @@ export function BomTable({
       {
         accessor: 'substitutes',
         defaultVisible: false,
-        render: (row: any) => {
+        render: (row: TableRecord) => {
           const substitutes = row.substitutes ?? [];
 
           return substitutes.length > 0 ? (
             <TableHoverCard
               value={<Text>{substitutes.length}</Text>}
               title={t`Substitutes`}
-              extra={substitutes.map((sub: any) => (
+              extra={substitutes.map((sub: TableRecord) => (
                 <RenderPart instance={sub.part_detail} />
               ))}
             />
@@ -274,7 +274,7 @@ export function BomTable({
         sortable: true,
         switchable: true,
         defaultVisible: false,
-        render: (record: any) =>
+        render: (record: TableRecord) =>
           formatPriceRange(record.pricing_min, record.pricing_max)
       },
       {
@@ -283,13 +283,13 @@ export function BomTable({
         ordering: 'pricing_max_total',
         sortable: true,
         switchable: true,
-        render: (record: any) =>
+        render: (record: TableRecord) =>
           formatPriceRange(record.pricing_min_total, record.pricing_max_total)
       },
       {
         accessor: 'available_stock',
         sortable: true,
-        render: (record: any) => {
+        render: (record: TableRecord) => {
           const extra: ReactNode[] = [];
 
           const part = record.sub_part_detail;
@@ -364,7 +364,7 @@ export function BomTable({
         accessor: 'can_build',
         title: t`Can Build`,
         sortable: true,
-        render: (record: any) => {
+        render: (record: TableRecord) => {
           // Virtual sub-part - the "can build" quantity does not make sense here
           if (record.sub_part_detail?.virtual) {
             return '-';
@@ -478,7 +478,7 @@ export function BomTable({
     ];
   }, [partId, params]);
 
-  const [selectedBomItem, setSelectedBomItem] = useState<any>({});
+  const [selectedBomItem, setSelectedBomItem] = useState<TableRecord>({});
 
   const importSessionFields = useMemo(() => {
     const fields = dataImporterSessionFields({
@@ -496,7 +496,7 @@ export function BomTable({
     url: ApiEndpoints.import_session_list,
     title: t`Import BOM Data`,
     fields: importSessionFields,
-    onFormSuccess: (response: any) => {
+    onFormSuccess: (response: TableRecord) => {
       setSelectedSession(response.pk);
       setImportOpened(true);
     }
@@ -538,7 +538,7 @@ export function BomTable({
     }
   });
 
-  const validateBomItem = useCallback((record: any) => {
+  const validateBomItem = useCallback((record: TableRecord) => {
     const url = apiUrl(ApiEndpoints.bom_item_validate, record.pk);
 
     api
@@ -562,13 +562,13 @@ export function BomTable({
   }, []);
 
   const rowActions = useCallback(
-    (record: any): RowAction[] => {
+    (record: TableRecord): RowAction[] => {
       // If this BOM item is defined for a *different* parent, then it cannot be edited
       if (record.part && record.part != partId) {
         return [
           {
             title: t`View BOM`,
-            onClick: (event: any) => {
+            onClick: (event: React.MouseEvent) => {
               navigateToLink(`/part/${record.part}/bom/`, navigate, event);
             },
             icon: <IconArrowRight />
