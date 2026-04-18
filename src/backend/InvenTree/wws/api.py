@@ -20,6 +20,7 @@ from billing.serializers import InvoiceSerializer
 from outbox.utils import create_event
 from channels.models import Contact
 from tenancy.permissions import IsTenantOrServiceToken
+from tenancy.throttling import OemLookupThrottle
 from .adapters import fetch_offers_for_connection
 from .models import (
     BomItem, DealerSupplierSetting, MerchantSettings, OemCrossReference, Offer,
@@ -335,6 +336,7 @@ class BotInventoryByOem(APIView):
     """Bot-facing endpoint to fetch offers by OEM. Searches internal catalog + external connections."""
 
     permission_classes = [IsTenantOrServiceToken]
+    throttle_classes = [OemLookupThrottle]
 
     def get(self, request, oem):
         """Return normalized offers from internal products + external connections."""

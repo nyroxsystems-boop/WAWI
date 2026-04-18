@@ -110,15 +110,35 @@ class ServiceTokenAuthentication(authentication.BaseAuthentication):
         if token is None or not token.is_active:
             raise exceptions.AuthenticationFailed('Invalid service token')
 
+        # SECURITY: reject tokens without a tenant binding. Global service
+        # tokens let a single leaked key read data across all 100 dealers.
+        # If a platform-wide token is ever needed, introduce an explicit
+        # 'platform_global' scope and separate permission class for it.
+        if token.tenant is None:
+            logger.warning(
+                'Rejected service token without tenant binding: %s', token.name
+            )
+            raise exceptions.AuthenticationFailed(
+                'Service token has no tenant binding'
+            )
+
+        # SECURITY: reject wildcard scopes — always require explicit scopes.
+        if '*' in (token.scopes or []):
+            logger.warning(
+                'Rejected service token with wildcard scope: %s', token.name
+            )
+            raise exceptions.AuthenticationFailed(
+                'Service token uses forbidden wildcard scope'
+            )
+
         user = ServiceTokenUser()
         user.username = f'service:{token.name}'
 
         request.service_token = token
         request.service = token
-        if token.tenant:
-            request.tenant = token.tenant
-            request.tenant_role = 'SERVICE'
-            set_current_tenant(token.tenant)
+        request.tenant = token.tenant
+        request.tenant_role = 'SERVICE'
+        set_current_tenant(token.tenant)
 
         token.mark_used()
         return (user, token)

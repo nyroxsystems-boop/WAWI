@@ -7,7 +7,19 @@ from django.core.exceptions import ValidationError
 from django.core.files.base import ContentFile
 from django.db import models, transaction
 from django.utils import timezone
+from django.utils.html import escape as _html_escape
 from django.utils.translation import gettext_lazy as _
+
+
+def _safe(value) -> str:
+    """HTML-escape any value for safe inclusion in the invoice PDF template.
+
+    Prevents injection via customer / company / line-item strings.
+    Returns an empty string for None so f-strings don't print 'None'.
+    """
+    if value is None:
+        return ''
+    return _html_escape(str(value))
 
 from tenancy.models import TenantScopedModel
 from channels.models import Contact
@@ -133,14 +145,36 @@ class Invoice(TenantScopedModel):
             html = None
 
         settings_obj = BillingSettings.objects.filter(tenant=self.tenant).first()
-        color = settings_obj.invoice_color if settings_obj else '#2563eb'
-        font = settings_obj.invoice_font if settings_obj else 'Inter, sans-serif'
-        accent = settings_obj.accent_color if settings_obj else '#f3f4f6'
-        
-        logo_pos = settings_obj.logo_position if settings_obj else 'left'
-        num_pos = settings_obj.number_position if settings_obj else 'right'
-        addr_layout = settings_obj.address_layout if settings_obj else 'two-column'
-        table_style = settings_obj.table_style if settings_obj else 'grid'
+
+        # --- Whitelisted style values (no user-supplied HTML reaches CSS) ---
+        # Colors/fonts are tenant-configurable, but we validate them so no
+        # untrusted characters land in <style>. Anything that does not match
+        # the whitelist falls back to the default.
+        import re as _re
+
+        def _safe_color(val, default):
+            if not val:
+                return default
+            v = str(val).strip()
+            return v if _re.fullmatch(r'#[0-9a-fA-F]{3,8}', v) else default
+
+        def _safe_font(val, default):
+            if not val:
+                return default
+            v = str(val).strip()
+            # Allow letters, digits, spaces, comma, dash, quote, dot only.
+            return v if _re.fullmatch(r"[A-Za-z0-9 ,\-'\".]+", v) else default
+
+        def _safe_enum(val, allowed, default):
+            return val if val in allowed else default
+
+        color = _safe_color(getattr(settings_obj, 'invoice_color', None), '#2563eb')
+        font = _safe_font(getattr(settings_obj, 'invoice_font', None), 'Inter, sans-serif')
+        accent = _safe_color(getattr(settings_obj, 'accent_color', None), '#f3f4f6')
+        logo_pos = _safe_enum(getattr(settings_obj, 'logo_position', None), ('left', 'right', 'center'), 'left')
+        num_pos = _safe_enum(getattr(settings_obj, 'number_position', None), ('left', 'right', 'center'), 'right')
+        addr_layout = _safe_enum(getattr(settings_obj, 'address_layout', None), ('two-column', 'single'), 'two-column')
+        table_style = _safe_enum(getattr(settings_obj, 'table_style', None), ('grid', 'striped', 'minimal'), 'grid')
 
         html_content = f"""
         <html>
@@ -235,16 +269,16 @@ class Invoice(TenantScopedModel):
         <body>
             <div class="header">
                 <div class="logo-box">
-                    {f'<img src="data:image/png;base64,{settings_obj.logo_base64}" style="max-width: 120px; max-height: 80px; object-fit: contain;" />' if settings_obj and settings_obj.logo_base64 else '<div style="width: 60px; height: 60px; background: #f3f4f6; border-radius: 8px; display: inline-block; line-height: 60px; text-align: center; color: #9ca3af;">LOGO</div>'}
+                    {f'<img src="data:image/png;base64,{_safe(getattr(settings_obj, "logo_base64", ""))}" style="max-width: 120px; max-height: 80px; object-fit: contain;" />' if settings_obj and getattr(settings_obj, 'logo_base64', None) else '<div style="width: 60px; height: 60px; background: #f3f4f6; border-radius: 8px; display: inline-block; line-height: 60px; text-align: center; color: #9ca3af;">LOGO</div>'}
                     <div style="margin-top: 10px;">
-                        <strong>{settings_obj.company_name if settings_obj else self.tenant.name}</strong><br>
-                        <span style="font-size: 9pt; color: #6b7280;">{settings_obj.address_line1 if settings_obj else ''}<br>{settings_obj.city if settings_obj else ''}</span>
+                        <strong>{_safe(getattr(settings_obj, 'company_name', None) or self.tenant.name)}</strong><br>
+                        <span style="font-size: 9pt; color: #6b7280;">{_safe(getattr(settings_obj, 'address_line1', ''))}<br>{_safe(getattr(settings_obj, 'city', ''))}</span>
                     </div>
                 </div>
                 <div style="text-align: {num_pos}">
                     <div class="invoice-title">{'GUTSCHRIFT' if self.invoice_type == 'credit_note' else 'RECHNUNG'}</div>
-                    <span style="font-size: 11pt; font-weight: bold;">{self.invoice_number or 'ENTWURF'}</span><br>
-                    Datum: {self.issue_date or timezone.now().date()}
+                    <span style="font-size: 11pt; font-weight: bold;">{_safe(self.invoice_number or 'ENTWURF')}</span><br>
+                    Datum: {_safe(self.issue_date or timezone.now().date())}
                 </div>
             </div>
 
@@ -252,11 +286,11 @@ class Invoice(TenantScopedModel):
                 <div class="details-col">
                     <span style="font-size: 8pt; color: #6b7280; text-transform: uppercase;">Empfänger</span><br>
                     <div style="margin-top: 5px; font-size: 11pt;">
-                        <strong>{self.contact.name if self.contact else 'Unbekannt'}</strong><br>
-                        {self.contact.wa_id if self.contact else ''}
+                        <strong>{_safe(self.contact.name if self.contact else 'Unbekannt')}</strong><br>
+                        {_safe(self.contact.wa_id if self.contact else '')}
                     </div>
                 </div>
-                {f'<div class="details-col" style="text-align: right;"><span style="font-size: 8pt; color: #6b7280; text-transform: uppercase;">Information</span><br><div style="margin-top: 5px;">Fällig am: {self.due_date or "-"}</div></div>' if addr_layout == 'two-column' else ''}
+                {f'<div class="details-col" style="text-align: right;"><span style="font-size: 8pt; color: #6b7280; text-transform: uppercase;">Information</span><br><div style="margin-top: 5px;">Fällig am: {_safe(self.due_date or "-")}</div></div>' if addr_layout == 'two-column' else ''}
             </div>
 
             <table class="{'striped' if table_style == 'striped' else ''}">
@@ -276,10 +310,10 @@ class Invoice(TenantScopedModel):
             html_content += f"""
                     <tr>
                         <td>{i}</td>
-                        <td>{line.description}</td>
-                        <td style="text-align: right">{line.quantity}</td>
-                        <td style="text-align: right">{line.unit_price} {self.currency}</td>
-                        <td style="text-align: right">{line.line_total} {self.currency}</td>
+                        <td>{_safe(line.description)}</td>
+                        <td style="text-align: right">{_safe(line.quantity)}</td>
+                        <td style="text-align: right">{_safe(line.unit_price)} {_safe(self.currency)}</td>
+                        <td style="text-align: right">{_safe(line.line_total)} {_safe(self.currency)}</td>
                     </tr>
             """
 
@@ -291,23 +325,23 @@ class Invoice(TenantScopedModel):
                 <div class="totals-table">
                     <div style="display: table-row;">
                         <div style="display: table-cell; text-align: left; padding: 5px 0;">Zwischensumme</div>
-                        <div style="display: table-cell; text-align: right;">{self.subtotal} {self.currency}</div>
+                        <div style="display: table-cell; text-align: right;">{_safe(self.subtotal)} {_safe(self.currency)}</div>
                     </div>
                     <div style="display: table-row;">
                         <div style="display: table-cell; text-align: left; padding: 5px 0;">MwSt (19%)</div>
-                        <div style="display: table-cell; text-align: right;">{self.tax_total} {self.currency}</div>
+                        <div style="display: table-cell; text-align: right;">{_safe(self.tax_total)} {_safe(self.currency)}</div>
                     </div>
                     <div style="display: table-row;" class="total-row">
                         <div style="display: table-cell; text-align: left; padding: 15px 0;">Gesamtbetrag</div>
-                        <div style="display: table-cell; text-align: right;">{self.total} {self.currency}</div>
+                        <div style="display: table-cell; text-align: right;">{_safe(self.total)} {_safe(self.currency)}</div>
                     </div>
                 </div>
             </div>
 
             <div class="footer">
-                <strong>{settings_obj.company_name if settings_obj else self.tenant.name}</strong><br>
-                {settings_obj.address_line1 if settings_obj else ''} · {settings_obj.postal_code if settings_obj else ''} {settings_obj.city if settings_obj else ''} · {settings_obj.country if settings_obj else ''}<br>
-                USt-IdNr: {settings_obj.tax_id if settings_obj else ''} · IBAN: {settings_obj.iban if settings_obj else ''} · Email: {settings_obj.email if settings_obj else ''}
+                <strong>{_safe(getattr(settings_obj, 'company_name', None) or self.tenant.name)}</strong><br>
+                {_safe(getattr(settings_obj, 'address_line1', ''))} · {_safe(getattr(settings_obj, 'postal_code', ''))} {_safe(getattr(settings_obj, 'city', ''))} · {_safe(getattr(settings_obj, 'country', ''))}<br>
+                USt-IdNr: {_safe(getattr(settings_obj, 'tax_id', ''))} · IBAN: {_safe(getattr(settings_obj, 'iban', ''))} · Email: {_safe(getattr(settings_obj, 'email', ''))}
             </div>
         </body>
         </html>

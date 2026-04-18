@@ -172,6 +172,19 @@ logger = structlog.getLogger('inventree')
 # Load SECRET_KEY
 SECRET_KEY = config.get_secret_key()
 
+# Hard-fail if SECRET_KEY is empty/insecure in production (non-DEBUG).
+# Upstream InvenTree auto-generates a random secret_key.txt on first run
+# which is fine for dev, but in Railway/Render production we MUST have an
+# explicit INVENTREE_SECRET_KEY env var — anything else is a security bug.
+if not DEBUG and not TESTING:
+    if not SECRET_KEY or len(str(SECRET_KEY).strip()) < 32:
+        raise RuntimeError(
+            'SECRET_KEY is empty or too short in production. '
+            'Set INVENTREE_SECRET_KEY as an environment variable with at least 32 '
+            'random characters. Generate one with: '
+            "python -c 'import secrets; print(secrets.token_urlsafe(50))'"
+        )
+
 # The filesystem location for served static files
 STATIC_ROOT = config.get_static_dir()
 
@@ -629,15 +642,24 @@ if DEBUG:
         'rest_framework.renderers.BrowsableAPIRenderer'
     )
 
-# Basic throttling (auth-focused)
+# Throttling: in addition to the default anon/user throttles we apply
+# per-tenant burst + sustained buckets so one dealer can't saturate the
+# shared rate budget for all 100 tenants. Rates are tunable via env vars.
 REST_FRAMEWORK.setdefault('DEFAULT_THROTTLE_CLASSES', [
     'rest_framework.throttling.AnonRateThrottle',
     'rest_framework.throttling.UserRateThrottle',
+    'tenancy.throttling.TenantBurstThrottle',
+    'tenancy.throttling.TenantSustainedThrottle',
 ])
 REST_FRAMEWORK.setdefault('DEFAULT_THROTTLE_RATES', {
-    'anon': '100/minute',
-    'user': '1000/minute',
-    'auth': '20/minute',
+    'anon': get_setting('INVENTREE_THROTTLE_ANON', 'throttle_anon', '100/minute'),
+    'user': get_setting('INVENTREE_THROTTLE_USER', 'throttle_user', '1000/minute'),
+    'auth': get_setting('INVENTREE_THROTTLE_AUTH', 'throttle_auth', '20/minute'),
+    # Per-tenant: 300 req / 10s burst, 5000 req / hour sustained.
+    'tenant_burst': get_setting('INVENTREE_THROTTLE_TENANT_BURST', 'throttle_tenant_burst', '300/10s'),
+    'tenant_sustained': get_setting('INVENTREE_THROTTLE_TENANT_SUSTAINED', 'throttle_tenant_sustained', '5000/hour'),
+    # OEM lookup is hot — cache-hits get absorbed, but limit to 120/min per tenant.
+    'oem_lookup': get_setting('INVENTREE_THROTTLE_OEM_LOOKUP', 'throttle_oem_lookup', '120/minute'),
 })
 
 # JWT settings - rest_framework_simplejwt

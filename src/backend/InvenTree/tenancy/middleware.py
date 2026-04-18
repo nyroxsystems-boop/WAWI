@@ -116,7 +116,16 @@ class TenantContextMiddleware(MiddlewareMixin):
 
         override_target = request.headers.get('X-Tenant-Override')
         if override_target:
-            if self._can_override(user_id, override_target):
+            # SECURITY: Require the JWT itself to carry OWNER_ADMIN role AND
+            # an explicit 'can_override=True' claim, AND the user must still
+            # have active OWNER_ADMIN membership on the target tenant.
+            # Without both checks a stolen JWT for tenant A could pivot to B.
+            if (
+                role == TenantUser.Role.OWNER_ADMIN
+                and claims
+                and claims.get('can_override') is True
+                and self._can_override(user_id, override_target)
+            ):
                 tenant = self._get_tenant_from_identifier(override_target)
                 logger.info(
                     'Tenant override applied',
@@ -133,6 +142,15 @@ class TenantContextMiddleware(MiddlewareMixin):
                     metadata={'target': override_target, 'path': request.path},
                 )
             else:
+                logger.warning(
+                    'Tenant override denied',
+                    extra={
+                        'user_id': user_id,
+                        'target_tenant': override_target,
+                        'role': role,
+                        'path': request.path,
+                    },
+                )
                 return HttpResponseForbidden('Tenant override not permitted')
 
         if tenant:

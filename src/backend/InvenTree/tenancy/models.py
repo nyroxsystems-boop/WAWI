@@ -179,10 +179,20 @@ class ServiceToken(models.Model):
         self.save(update_fields=['last_used_at'])
 
     def has_scope(self, scope: str) -> bool:
-        """Check if token has the given scope."""
+        """Check if token has the given scope.
+
+        SECURITY: wildcard ('*') scopes are NOT honored. Tokens must list
+        every scope they need explicitly so a compromised bot key cannot
+        pivot to unrelated APIs. Tokens created with '*' in their scope
+        list are also rejected at authentication time — this method is
+        a belt-and-braces check.
+        """
         if not scope:
             return True
-        return scope in (self.scopes or []) or '*' in (self.scopes or [])
+        scopes = self.scopes or []
+        if '*' in scopes:
+            return False
+        return scope in scopes
 
 
 class TenantDevice(models.Model):
