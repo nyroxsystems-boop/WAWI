@@ -25,6 +25,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libjpeg-dev \
     zlib1g-dev \
     git \
+    libpango-1.0-0 \
+    libpangocairo-1.0-0 \
+    libgdk-pixbuf-2.0-0 \
+    libcairo2 \
+    libffi-dev \
+    shared-mime-info \
+    libglib2.0-0 \
+    fonts-dejavu-core \
+    curl \
+    procps \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Set work directory
