@@ -203,9 +203,10 @@ class ApiTokenSerializer(InvenTreeModelSerializer):
     """Serializer for the ApiToken model."""
 
     in_use = serializers.SerializerMethodField(read_only=True)
-    user = serializers.PrimaryKeyRelatedField(
-        queryset=User.objects.all(), required=False
-    )
+    # Token ownership is derived exclusively from the authenticated request.
+    # Accepting a user primary key here allowed any caller to mint a token for
+    # another account, including a superuser.
+    user = serializers.PrimaryKeyRelatedField(read_only=True)
 
     def get_in_use(self, token: ApiToken) -> bool:
         """Return True if the token is currently used to call the endpoint."""
@@ -235,8 +236,7 @@ class ApiTokenSerializer(InvenTreeModelSerializer):
 
     def validate(self, data):
         """Validate the data for the serializer."""
-        if 'user' not in data:
-            data['user'] = self.context['request'].user
+        data['user'] = self.context['request'].user
         return super().validate(data)
 
     user_detail = UserSerializer(source='user', read_only=True)

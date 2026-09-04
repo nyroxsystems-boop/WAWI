@@ -49,6 +49,7 @@ class WhatsAppResolveView(APIView):
     """Resolve a WhatsApp phone_number_id to tenant info."""
 
     permission_classes = [IsTenantOrServiceToken]
+    required_service_scope = 'bot.channel.resolve'
 
     def get(self, request):
         """Return channel and tenant mapping."""
@@ -74,6 +75,7 @@ class ContactUpsertView(APIView):
     """Upsert contact within a tenant."""
 
     permission_classes = [IsTenantOrServiceToken]
+    required_service_scope = 'bot.contact.write'
 
     def post(self, request):
         """Create or update a contact for the current tenant."""
@@ -96,6 +98,7 @@ class ConversationUpsertView(APIView):
     """Upsert conversation and optional state JSON."""
 
     permission_classes = [IsTenantOrServiceToken]
+    required_service_scope = 'bot.conversation.write'
 
     def post(self, request):
         """Create or update a conversation for the given wa_id."""
@@ -118,6 +121,7 @@ class ConversationListView(APIView):
     """List all conversations for the current tenant."""
 
     permission_classes = [IsTenantOrServiceToken]
+    required_service_scope = 'bot.conversation.read'
 
     def get(self, request):
         """Return list of conversations."""

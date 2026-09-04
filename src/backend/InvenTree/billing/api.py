@@ -12,6 +12,7 @@ from rest_framework.response import Response
 from rest_framework.routers import DefaultRouter
 
 from billing.models_settings import BillingSettings
+from tenancy.models import TenantUser
 from tenancy.permissions import IsTenantOrServiceToken
 from .models import Invoice
 from .serializers import InvoiceSerializer
@@ -31,6 +32,10 @@ class InvoiceViewSet(viewsets.ModelViewSet):
     serializer_class = InvoiceSerializer
     queryset = Invoice.objects.select_related('contact', 'order')
     pagination_class = BillingPagination
+    tenant_read_roles = {
+        TenantUser.Role.TENANT_ADMIN,
+        TenantUser.Role.OWNER_ADMIN,
+    }
     http_method_names = ['get', 'post', 'patch', 'head', 'options']
 
     def get_queryset(self):
@@ -165,6 +170,10 @@ class BillingSettingsViewSet(viewsets.ViewSet):
     """Get/Update billing settings per tenant."""
 
     permission_classes = [IsTenantOrServiceToken]
+    tenant_read_roles = {
+        TenantUser.Role.TENANT_ADMIN,
+        TenantUser.Role.OWNER_ADMIN,
+    }
 
     def retrieve(self, request, pk=None):
         tenant = getattr(request, 'tenant', None)
@@ -243,6 +252,10 @@ class InvoiceExportView(viewsets.ViewSet):
     """Export invoices to CSV."""
 
     permission_classes = [IsTenantOrServiceToken]
+    tenant_read_roles = {
+        TenantUser.Role.TENANT_ADMIN,
+        TenantUser.Role.OWNER_ADMIN,
+    }
 
     def list(self, request):
         tenant = getattr(request, 'tenant', None)
@@ -276,6 +289,10 @@ class DATEVExportView(viewsets.ViewSet):
     """Export invoices in DATEV Buchungsstapel format."""
 
     permission_classes = [IsTenantOrServiceToken]
+    tenant_read_roles = {
+        TenantUser.Role.TENANT_ADMIN,
+        TenantUser.Role.OWNER_ADMIN,
+    }
 
     def list(self, request):
         tenant = getattr(request, 'tenant', None)

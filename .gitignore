@@ -5,7 +5,15 @@ inventree.env
 config/oidc.pem
 secret_key.txt
 .venv/
+.venv*/
+**/.venv*/
 data/
+**/.env
+**/*.sqlite
+**/*.sqlite3
+**/*.sqlite-*
+**/backups/*.dump
+**/__pycache__/
 *.log
 __pycache__/
 *.pyc

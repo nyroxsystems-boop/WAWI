@@ -1,5 +1,9 @@
 """Serializers for WWS domain."""
 
+import ipaddress
+import json
+from urllib.parse import urlparse
+
 from rest_framework import serializers
 
 from channels.serializers import ContactSerializer
@@ -150,7 +154,10 @@ class WwsConnectionSerializer(serializers.ModelSerializer):
 
     baseUrl = serializers.URLField(source='base_url', required=False)
     isActive = serializers.BooleanField(source='is_active', required=False)
-    authConfig = serializers.JSONField(source='auth_config_json', required=False)
+    auth_config_json = serializers.JSONField(required=False, write_only=True)
+    authConfig = serializers.JSONField(
+        source='auth_config_json', required=False, write_only=True
+    )
     config = serializers.JSONField(source='config_json', required=False)
 
     class Meta:
@@ -165,6 +172,52 @@ class WwsConnectionSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         validated_data['tenant'] = self.context['tenant']
         return super().create(validated_data)
+
+    def validate(self, attrs):
+        """Keep credentials write-only and constrain outbound request config."""
+        connection_type = attrs.get(
+            'type', getattr(self.instance, 'type', WwsConnection.ConnectionType.DEMO)
+        )
+        base_url = attrs.get('base_url', getattr(self.instance, 'base_url', ''))
+        if connection_type == WwsConnection.ConnectionType.HTTP_API:
+            parsed = urlparse(base_url)
+            if parsed.scheme != 'https' or not parsed.hostname or parsed.username:
+                raise serializers.ValidationError({
+                    'base_url': 'HTTP API connections require a credential-free HTTPS URL.'
+                })
+            hostname = parsed.hostname.rstrip('.').lower()
+            if hostname == 'localhost' or hostname.endswith(('.localhost', '.local')):
+                raise serializers.ValidationError({'base_url': 'Private hosts are not allowed.'})
+            try:
+                address = ipaddress.ip_address(hostname)
+            except ValueError:
+                address = None
+            if address is not None and not address.is_global:
+                raise serializers.ValidationError({'base_url': 'Private IP addresses are not allowed.'})
+
+        config = attrs.get('config_json', getattr(self.instance, 'config_json', {}))
+        if len(json.dumps(config, separators=(',', ':'))) > 16_384:
+            raise serializers.ValidationError({'config_json': 'Configuration is too large.'})
+        inventory_path = config.get('inventory_path') if isinstance(config, dict) else None
+        if inventory_path is not None and (
+            not isinstance(inventory_path, str)
+            or not inventory_path.startswith('/')
+            or inventory_path.startswith('//')
+            or '://' in inventory_path
+        ):
+            raise serializers.ValidationError({
+                'config_json': 'inventory_path must be an absolute path on the configured host.'
+            })
+
+        auth_config = attrs.get(
+            'auth_config_json', getattr(self.instance, 'auth_config_json', {})
+        )
+        if not isinstance(auth_config, dict):
+            raise serializers.ValidationError({'auth_config_json': 'Expected an object.'})
+        if len(json.dumps(auth_config, separators=(',', ':'))) > 16_384:
+            raise serializers.ValidationError({'auth_config_json': 'Credentials are too large.'})
+
+        return super().validate(attrs)
 
 
 # ──────────────────────────────────────────────────────────────

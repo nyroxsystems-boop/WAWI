@@ -205,7 +205,7 @@ class Migration(migrations.Migration):
                 ('oem_number', models.CharField(db_index=True, help_text='Alternative OEM / part number', max_length=100)),
                 ('brand', models.CharField(blank=True, default='', help_text='Brand that uses this number, e.g. TRW, ATE, Brembo', max_length=128)),
                 ('oem_type', models.CharField(choices=[('OE', 'Original Equipment'), ('AM', 'Aftermarket'), ('PARALLEL', 'Parallel OEM'), ('CROSS', 'Generic Cross-Reference')], default='CROSS', max_length=16)),
-                ('source', models.CharField(blank=True, default='manual', help_text='How this reference was added: manual, tecdoc, import, ai', max_length=64)),
+                ('source', models.CharField(blank=True, default='manual', help_text='How this reference was added: manual, yq, import, ai', max_length=64)),
                 ('notes', models.TextField(blank=True, default='')),
                 ('created_at', models.DateTimeField(auto_now_add=True)),
                 ('product', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='cross_references', to='wws.product')),

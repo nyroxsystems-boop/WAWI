@@ -32,6 +32,7 @@ import report.api
 import stock.api
 import tenancy.api
 import tenancy.api_admin
+from tenancy.media import ProtectedMediaView
 import wws.api
 import wws.ai_views
 import users.api
@@ -215,6 +216,11 @@ urlpatterns += [  # API URLs
     path('api-doc/', SpectacularRedocView.as_view(url_name='schema'), name='api-doc'),
     path('api/docs/', SpectacularRedocView.as_view(url_name='schema'), name='api-docs'),
     path('api/schema/', SpectacularAPIView.as_view(custom_settings={'SCHEMA_PATH_PREFIX': '/api/'}), name='api-schema'),
+]
+# Never expose MEDIA_ROOT directly. This endpoint is deliberately registered
+# before the frontend catch-all and enforces tenant ownership per object.
+urlpatterns += [
+    path('media/<path:media_path>', ProtectedMediaView.as_view(), name='protected-media'),
 ]
 urlpatterns += [path('', include('wawitest.urls'))]
 # Note: wws.api.dashboard_urls is already included in apipatterns above

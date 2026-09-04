@@ -14,6 +14,15 @@ class Command(BaseCommand):
     """Create demo tenant, user, channel, supplier, and service token."""
 
     help = 'Seed demo data: owner user, tenant, tenant user, WhatsApp channel, supplier'
+    BOT_SCOPES = [
+        'bot.channel.resolve',
+        'bot.contact.write',
+        'bot.conversation.read',
+        'bot.conversation.write',
+        'bot.health.read',
+        'bot.inventory.read',
+        'bot.settings.read',
+    ]
 
     def handle(self, *args, **options):
         """Execute seed routine."""
@@ -83,17 +92,20 @@ class Command(BaseCommand):
         svc, created = ServiceToken.objects.get_or_create(
             tenant=tenant,
             name='bot-service',
-            defaults={'token_hash': ServiceToken.hash_token(token_value), 'scopes': ['bot:*']},
+            defaults={
+                'token_hash': ServiceToken.hash_token(token_value),
+                'scopes': self.BOT_SCOPES,
+            },
         )
         if not created:
             token_value = None  # don't print secrets if existing
 
         self.stdout.write(self.style.SUCCESS('Seed data created'))
         self.stdout.write(f'Tenant ID: {tenant.id}')
-        self.stdout.write(f'Owner username: {owner.username} / password: owner')
+        self.stdout.write(f'Owner username: {owner.username}')
         self.stdout.write(f'WhatsApp channel phone_number_id: {channel.phone_number_id}')
         self.stdout.write(f'Supplier: {supplier.name}')
         if token_value:
-            self.stdout.write(f'Service token (save this): {token_value}')
+            self.stdout.write('Service token created; provision its value through a secret store.')
         else:
             self.stdout.write('Service token already existed; not printing token value.')

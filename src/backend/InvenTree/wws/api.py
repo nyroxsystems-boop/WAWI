@@ -19,6 +19,7 @@ from billing.models import Invoice, InvoiceLine
 from billing.serializers import InvoiceSerializer
 from outbox.utils import create_event
 from channels.models import Contact
+from tenancy.models import TenantUser
 from tenancy.permissions import IsTenantOrServiceToken
 from tenancy.throttling import OemLookupThrottle
 from .adapters import fetch_offers_for_connection
@@ -256,6 +257,10 @@ class WwsConnectionViewSet(TenantScopedViewSet):
     serializer_class = WwsConnectionSerializer
     queryset = WwsConnection.objects.all()
     http_method_names = ['get', 'post', 'patch', 'put', 'delete', 'head', 'options']
+    tenant_read_roles = {
+        TenantUser.Role.TENANT_ADMIN,
+        TenantUser.Role.OWNER_ADMIN,
+    }
 
     @action(detail=True, methods=['post'])
     def test(self, request, pk=None):
@@ -336,6 +341,7 @@ class BotInventoryByOem(APIView):
     """Bot-facing endpoint to fetch offers by OEM. Searches internal catalog + external connections."""
 
     permission_classes = [IsTenantOrServiceToken]
+    required_service_scope = 'bot.inventory.read'
     throttle_classes = [OemLookupThrottle]
 
     def get(self, request, oem):
@@ -429,6 +435,7 @@ class BotHealth(APIView):
     """Simple health endpoint for bot."""
 
     permission_classes = [IsTenantOrServiceToken]
+    required_service_scope = 'bot.health.read'
 
     def get(self, request):
         """Return ok — do not leak tenant details."""
@@ -439,6 +446,7 @@ class BotConfig(APIView):
     """Expose config info for bot clients."""
 
     permission_classes = [IsTenantOrServiceToken]
+    required_service_scope = 'bot.settings.read'
 
     def get(self, request):
         """Return readonly config summary."""

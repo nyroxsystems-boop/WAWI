@@ -486,7 +486,7 @@ class OemCrossReference(TenantScopedModel):
     )
     source = models.CharField(
         max_length=64, blank=True, default='manual',
-        help_text=_('How this reference was added: manual, tecdoc, import, ai'),
+        help_text=_('How this reference was added: manual, yq, import, ai'),
     )
     notes = models.TextField(blank=True, default='')
     created_at = models.DateTimeField(auto_now_add=True)

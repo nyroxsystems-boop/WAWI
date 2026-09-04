@@ -3,10 +3,10 @@
 import logging
 from typing import Any, Dict, List
 
-import requests
 from django.utils import timezone
 
 from .models import WwsConnection
+from .safe_http import fetch_public_json
 
 logger = logging.getLogger('inventree')
 
@@ -33,9 +33,13 @@ def fetch_http_api(connection: WwsConnection, oem: str) -> List[dict]:
     headers = {}
     if token := connection.auth_config_json.get('token'):
         headers['Authorization'] = f'Bearer {token}'
-    response = requests.get(url, params=params, headers=headers, timeout=10)
-    response.raise_for_status()
-    data = response.json()
+    data = fetch_public_json(
+        url,
+        params=params,
+        headers=headers,
+        timeout=10,
+        max_bytes=2 * 1024 * 1024,
+    )
     offers = data if isinstance(data, list) else data.get('offers', [])
     return [normalize_offer(o, connection.base_url) for o in offers]
 

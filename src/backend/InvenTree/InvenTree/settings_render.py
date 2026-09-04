@@ -1,5 +1,8 @@
 import os
+from urllib.parse import urlsplit
+
 import dj_database_url
+from django.core.exceptions import ImproperlyConfigured
 
 # ─── Railway path overrides ───────────────────────────────────────────
 # Railway service env vars override Dockerfile ENV values.
@@ -18,14 +21,48 @@ for _key, _default in _RAILWAY_PATH_DEFAULTS.items():
     _val = os.environ.get(_key, '')
     if not _val or '/opt/render' in _val:
         os.environ[_key] = _default
+
+# settings.py validates these during import, so production-safe defaults must
+# exist before the wildcard import below. Deployments can still override both.
+os.environ.setdefault(
+    'INVENTREE_ALLOWED_HOSTS',
+    'wawi-production.up.railway.app,wawi-new.onrender.com,.partsunion.de',
+)
+os.environ.setdefault(
+    'INVENTREE_PUBLIC_BASE_URL', 'https://wawi-production.up.railway.app'
+)
 # ──────────────────────────────────────────────────────────────────────
 
 from .settings import *  # noqa
 
 print("--- LOADING RENDER SETTINGS ---")
 
-# Railway / production ALLOWED_HOSTS
-ALLOWED_HOSTS = ['*']  # Railway handles host validation at proxy level
+# Host validation is an application invariant. Do not delegate it to an edge
+# which may be reconfigured independently of Django.
+_configured_hosts = [
+    value.strip()
+    for value in os.environ.get('INVENTREE_ALLOWED_HOSTS', '').split(',')
+    if value.strip()
+]
+ALLOWED_HOSTS = _configured_hosts or [
+    'wawi-production.up.railway.app',
+    'wawi-new.onrender.com',
+    '.partsunion.de',
+]
+if '*' in ALLOWED_HOSTS:
+    raise ImproperlyConfigured('Wildcard INVENTREE_ALLOWED_HOSTS is forbidden')
+
+WAWI_PUBLIC_BASE_URL = os.environ.get(
+    'INVENTREE_PUBLIC_BASE_URL', 'https://wawi-production.up.railway.app'
+).rstrip('/')
+_public_url = urlsplit(WAWI_PUBLIC_BASE_URL)
+if _public_url.scheme != 'https' or not _public_url.hostname:
+    raise ImproperlyConfigured(
+        'INVENTREE_PUBLIC_BASE_URL must be a canonical HTTPS URL'
+    )
+
+# Forwarded Host must never influence passwordless-login links.
+USE_X_FORWARDED_HOST = False
 
 # Insert DB health middleware BEFORE tenancy middleware
 if 'tenancy.middleware.SubdomainTenantMiddleware' in MIDDLEWARE:
@@ -81,15 +118,13 @@ REST_FRAMEWORK['DEFAULT_AUTHENTICATION_CLASSES'] = [
     'users.authentication.ApiTokenAuthentication',  # Custom ApiToken authentication (uses ApiToken model)
     'tenancy.authentication.ServiceTokenAuthentication',
     'tenancy.authentication.TenantJWTAuthentication',
+    'tenancy.authentication.CookieJWTAuthentication',
     'rest_framework.authentication.BasicAuthentication',
     'rest_framework.authentication.SessionAuthentication',
 ]
 
-# Production: require authentication for all API endpoints
-# Bot-Service uses ServiceToken via Authorization header
-REST_FRAMEWORK['DEFAULT_PERMISSION_CLASSES'] = [
-    'rest_framework.permissions.IsAuthenticated',
-]
+# Preserve the secure default permission chain from settings.py. Replacing it
+# with IsAuthenticated would silently disable all model and role checks.
 
 print(f"REST_FRAMEWORK AUTH CLASSES: {REST_FRAMEWORK['DEFAULT_AUTHENTICATION_CLASSES']}")
 print(f"REST_FRAMEWORK PERMISSIONS: {REST_FRAMEWORK['DEFAULT_PERMISSION_CLASSES']}")

@@ -31,7 +31,12 @@ class BotCompatTests(APITestCase):
             tenant=self.tenant,
             name='bot',
             token_hash=ServiceToken.hash_token(self.raw_token),
-            scopes=['bot:*'],
+            scopes=[
+                'bot.channel.resolve',
+                'bot.contact.write',
+                'bot.conversation.write',
+                'bot.inventory.read',
+            ],
         )
 
     def auth(self):

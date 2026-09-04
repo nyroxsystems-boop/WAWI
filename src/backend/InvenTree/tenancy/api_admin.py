@@ -6,12 +6,11 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from channels.models import WhatsAppChannel
-from tenancy.models import ServiceToken, Tenant, TenantUser
-from tenancy.permissions import IsOwner
+from tenancy.models import ServiceToken, Tenant, TenantDevice, TenantUser
+from tenancy.permissions import IsOwner, IsPlatformAdmin
 from tenancy.serializers_admin import (
     ServiceTokenCreateSerializer,
     TenantSerializer,
-    TenantUserCreateSerializer,
     TenantUserCreateSerializer,
     WhatsAppChannelCreateSerializer,
 )
@@ -25,6 +24,25 @@ class TenantAdminViewSet(viewsets.ModelViewSet):
     serializer_class = TenantSerializer
     queryset = Tenant.objects.all()
     http_method_names = ['get', 'post', 'head', 'options']
+
+    def get_permissions(self):
+        """Only platform admins may create tenants; owners manage their own."""
+        permission_types = (
+            [IsAuthenticated, IsPlatformAdmin]
+            if self.action == 'create'
+            else [IsAuthenticated, IsOwner]
+        )
+        return [permission() for permission in permission_types]
+
+    def get_queryset(self):
+        """Never let a tenant owner enumerate or target another tenant."""
+        user = getattr(self.request, 'user', None)
+        if user and user.is_superuser:
+            return Tenant.objects.all()
+        tenant = getattr(self.request, 'tenant', None)
+        if tenant is None:
+            return Tenant.objects.none()
+        return Tenant.objects.filter(pk=tenant.pk)
 
     @action(detail=True, methods=['post'], url_path='users')
     def create_user(self, request, pk=None):
@@ -92,6 +110,13 @@ class ServiceTokenViewSet(viewsets.ModelViewSet):
     queryset = ServiceToken.objects.all()
     http_method_names = ['get', 'post', 'head', 'options']
 
+    def get_queryset(self):
+        """Return only tokens belonging to the authenticated tenant."""
+        tenant = getattr(self.request, 'tenant', None)
+        if tenant is None:
+            return ServiceToken.objects.none()
+        return ServiceToken.objects.filter(tenant=tenant)
+
     def list(self, request, *args, **kwargs):
         qs = self.get_queryset()
         data = [
@@ -108,7 +133,11 @@ class ServiceTokenViewSet(viewsets.ModelViewSet):
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(
-            data=request.data, context={'tenant_override': getattr(request, 'tenant', None)}
+            data=request.data,
+            context={
+                **self.get_serializer_context(),
+                'tenant': getattr(request, 'tenant', None),
+            },
         )
         serializer.is_valid(raise_exception=True)
         token = serializer.save()
@@ -126,7 +155,7 @@ class ServiceTokenViewSet(viewsets.ModelViewSet):
 class AdminStatsView(APIView):
     """Global oversight stats for Owner Admins."""
 
-    permission_classes = [IsAuthenticated, IsOwner]
+    permission_classes = [IsAuthenticated, IsPlatformAdmin]
 
     def get(self, request):
         tenants = Tenant.objects.all()

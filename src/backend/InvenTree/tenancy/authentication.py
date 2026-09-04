@@ -7,7 +7,7 @@ from rest_framework import authentication, exceptions
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from tenancy.context import set_current_tenant
-from tenancy.models import ServiceToken, Tenant, TenantDevice
+from tenancy.models import ServiceToken, Tenant, TenantDevice, TenantUser
 
 logger = logging.getLogger('inventree')
 
@@ -35,29 +35,41 @@ class TenantJWTAuthentication(JWTAuthentication):
             return None
 
         user, validated_token = result
-        self._attach_tenant(request, validated_token)
+        self._attach_tenant(request, validated_token, user)
 
         return (user, validated_token)
 
-    def _attach_tenant(self, request, validated_token):
+    def _attach_tenant(self, request, validated_token, user):
         """Set tenant and role from the token claims."""
         tenant_id = validated_token.get('tenant_id')
         if tenant_id is None:
             return
 
-        tenant = Tenant.objects.filter(id=tenant_id).first()
+        tenant = Tenant.objects.filter(
+            id=tenant_id, is_active=True, status='active'
+        ).first()
         if tenant is None:
             logger.warning('JWT referenced unknown tenant_id=%s', tenant_id)
-            return
+            raise exceptions.AuthenticationFailed('Invalid or inactive tenant')
+
+        membership = TenantUser.objects.filter(
+            tenant=tenant,
+            user=user,
+            is_active=True,
+        ).first()
+        if membership is None:
+            raise exceptions.AuthenticationFailed('Tenant membership is not active')
 
         request.tenant = tenant
-        request.tenant_role = validated_token.get('role')
+        request.tenant_user = membership
+        request.tenant_role = membership.role
         
         # Verify device is still active if device_id is present
         device_id = validated_token.get('device_id')
         if device_id:
-            user = getattr(request, 'user', None)
-            if user and not TenantDevice.objects.filter(user=user, tenant=tenant, device_id=device_id).exists():
+            if not TenantDevice.objects.filter(
+                user=user, tenant=tenant, device_id=device_id
+            ).exists():
                 raise exceptions.AuthenticationFailed('Device session has been invalidated or expired')
 
         set_current_tenant(tenant)
@@ -77,13 +89,18 @@ class CookieJWTAuthentication(TenantJWTAuthentication):
         if not raw_token:
             return None
 
+        # A JWT read from a cookie is ambient browser authority and therefore
+        # must use Django's CSRF validation for unsafe methods. Bearer tokens
+        # remain unaffected because callers attach them explicitly.
+        authentication.SessionAuthentication().enforce_csrf(request)
+
         try:
             validated_token = self.get_validated_token(raw_token)
         except Exception:
             return None
 
         user = self.get_user(validated_token)
-        self._attach_tenant(request, validated_token)
+        self._attach_tenant(request, validated_token, user)
         return (user, validated_token)
 
 
@@ -123,7 +140,9 @@ class ServiceTokenAuthentication(authentication.BaseAuthentication):
             )
 
         # SECURITY: reject wildcard scopes — always require explicit scopes.
-        if '*' in (token.scopes or []):
+        if any(
+            '*' in scope for scope in (token.scopes or []) if isinstance(scope, str)
+        ):
             logger.warning(
                 'Rejected service token with wildcard scope: %s', token.name
             )

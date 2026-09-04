@@ -14,6 +14,7 @@ from rest_framework.response import Response
 
 import InvenTree.version
 from InvenTree.helpers_email import send_email
+from InvenTree.helpers_model import construct_absolute_url
 
 logger = structlog.get_logger('inventree')
 
@@ -73,6 +74,13 @@ class GetSimpleLoginView(GenericAPIView):
     def create_link(self, user):
         """Create a login link for this user."""
         link = reverse('sesame-login')
-        link = self.request.build_absolute_uri(link)
+        # Never construct an authentication link from Host/X-Forwarded-Host.
+        # The canonical base is controlled by deployment configuration.
+        canonical_base = getattr(settings, 'WAWI_PUBLIC_BASE_URL', None)
+        if not canonical_base:
+            raise RuntimeError('Canonical public base URL is not configured')
+        link = construct_absolute_url(
+            link.lstrip('/'), base_url=canonical_base.rstrip('/') + '/'
+        )
         link += sesame.utils.get_query_string(user)
         return link

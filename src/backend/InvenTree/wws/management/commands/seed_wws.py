@@ -13,6 +13,15 @@ class Command(BaseCommand):
     """Seed command to bootstrap demo tenant and data."""
 
     help = 'Create demo tenant, user, WhatsApp channel, supplier, connection, order, offers'
+    BOT_SCOPES = [
+        'bot.channel.resolve',
+        'bot.contact.write',
+        'bot.conversation.read',
+        'bot.conversation.write',
+        'bot.health.read',
+        'bot.inventory.read',
+        'bot.settings.read',
+    ]
 
     def handle(self, *args, **options):
         User = get_user_model()
@@ -73,13 +82,16 @@ class Command(BaseCommand):
         svc, created = ServiceToken.objects.get_or_create(
             tenant=tenant,
             name='bot-service',
-            defaults={'token_hash': ServiceToken.hash_token(token_value), 'scopes': ['bot:*']},
+            defaults={
+                'token_hash': ServiceToken.hash_token(token_value),
+                'scopes': self.BOT_SCOPES,
+            },
         )
 
         self.stdout.write(self.style.SUCCESS('Seed WWS demo data created'))
         self.stdout.write(f'Tenant ID: {tenant.id}')
-        self.stdout.write(f'Owner username: {owner.username} / password: owner')
+        self.stdout.write(f'Owner username: {owner.username}')
         if created:
-            self.stdout.write(f'Service token: {token_value}')
+            self.stdout.write('Service token created; provision its value through a secret store.')
         else:
             self.stdout.write('Service token already existed (not shown)')

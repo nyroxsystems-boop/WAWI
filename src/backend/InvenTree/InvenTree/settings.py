@@ -626,6 +626,7 @@ REST_FRAMEWORK = {
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.LimitOffsetPagination',
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
+        'tenancy.permissions.IsActiveTenantContext',
         'rest_framework.permissions.DjangoModelPermissions',
         'InvenTree.permissions.RolePermission',
         'InvenTree.permissions.InvenTreeTokenMatchesOASRequirements',
@@ -1570,6 +1571,13 @@ if CUSTOM_FLAGS:  # pragma: no cover
 # Magic login django-sesame
 SESAME_MAX_AGE = 300
 LOGIN_REDIRECT_URL = '/api/auth/login-redirect/'
+WAWI_PUBLIC_BASE_URL = os.environ.get('INVENTREE_PUBLIC_BASE_URL') or (
+    'http://testserver' if TESTING else SITE_URL
+)
+if not WAWI_PUBLIC_BASE_URL and not DEBUG:
+    raise django.core.exceptions.ImproperlyConfigured(
+        'INVENTREE_PUBLIC_BASE_URL is required for passwordless login links'
+    )
 
 # Configuration for API schema generation / oAuth2
 SPECTACULAR_SETTINGS = spectacular.get_spectacular_settings()

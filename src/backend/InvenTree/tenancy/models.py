@@ -131,6 +131,26 @@ class ServiceToken(models.Model):
 
     TOKEN_PREFIX = 'svc_'
 
+    ALLOWED_SCOPES = frozenset({
+        'billing.read',
+        'billing.write',
+        'bot.channel.resolve',
+        'bot.contact.write',
+        'bot.conversation.read',
+        'bot.conversation.write',
+        'bot.health.read',
+        'bot.inventory.read',
+        'bot.settings.read',
+        'channels.read',
+        'channels.write',
+        'extsync.read',
+        'extsync.write',
+        'outbox.read',
+        'outbox.write',
+        'wws.read',
+        'wws.write',
+    })
+
     name = models.CharField(max_length=100)
     token_hash = models.CharField(max_length=128, unique=True, db_index=True)
     scopes = models.JSONField(default=list, help_text=_('List of scopes for this token'))
@@ -190,7 +210,7 @@ class ServiceToken(models.Model):
         if not scope:
             return True
         scopes = self.scopes or []
-        if '*' in scopes:
+        if any('*' in value for value in scopes if isinstance(value, str)):
             return False
         return scope in scopes
 

@@ -25,13 +25,6 @@ if [ -n "$DJANGO_SUPERUSER_PASSWORD" ] && [ -n "$DJANGO_SUPERUSER_USERNAME" ]; t
         2>&1 || echo "Superuser already exists or creation failed"
 fi
 
-# Generate API token for bot-service (auto-finds first superuser)
-echo "============================================"
-echo "=== Generating API Token (bot-service)   ==="
-echo "============================================"
-python manage.py create_api_token --name bot-service --days 3650 2>&1 || echo "WARNING: Token generation failed"
-echo "============================================"
-
 echo "=== Starting Gunicorn ==="
 exec gunicorn -b 0.0.0.0:8000 \
     --workers "${GUNICORN_WORKERS:-8}" \

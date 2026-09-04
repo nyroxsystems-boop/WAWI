@@ -4,14 +4,15 @@ from django.contrib.auth import get_user_model
 from django.test import override_settings
 from django.urls import path
 
+from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.test import APIClient, APITestCase
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import AccessToken
 
-from tenancy.authentication import ServiceTokenAuthentication
+from tenancy.authentication import CookieJWTAuthentication, ServiceTokenAuthentication
 from tenancy.models import ServiceToken, Tenant, TenantUser
-from tenancy.permissions import IsTenantOrServiceToken
+from tenancy.permissions import IsTenantMember, IsTenantOrServiceToken
 
 
 class LoginAuthTests(APITestCase):
@@ -79,6 +80,7 @@ class ServiceEchoView(APIView):
 
     authentication_classes = [ServiceTokenAuthentication]
     permission_classes = [IsTenantOrServiceToken]
+    required_service_scope = 'bot.health.read'
 
     def get(self, request):
         """Return tenant context."""
@@ -86,7 +88,23 @@ class ServiceEchoView(APIView):
         return Response({'tenant': tenant.id if tenant else None})
 
 
-service_urlpatterns = [path('service-echo/', ServiceEchoView.as_view(), name='service-echo')]
+class CookieEchoView(APIView):
+    """Unsafe echo used to assert CSRF enforcement for cookie JWTs."""
+
+    authentication_classes = [CookieJWTAuthentication]
+    permission_classes = [IsTenantMember]
+
+    def get(self, request):
+        return Response({'ok': True})
+
+    def post(self, request):
+        return Response({'ok': True})
+
+
+service_urlpatterns = [
+    path('service-echo/', ServiceEchoView.as_view(), name='service-echo'),
+    path('cookie-echo/', CookieEchoView.as_view(), name='cookie-echo'),
+]
 urlpatterns = service_urlpatterns
 
 
@@ -100,7 +118,7 @@ class ServiceTokenTests(APITestCase):
         self.tenant = Tenant.objects.create(name='Service Tenant', slug='service-tenant')
         self.raw_token = ServiceToken.generate_token()
         self.token = ServiceToken.objects.create(
-            name='bot', tenant=self.tenant, scopes=['bot:*']
+            name='bot', tenant=self.tenant, scopes=['bot.health.read']
         )
         self.token.set_token(self.raw_token)
         self.token.save()
@@ -120,3 +138,34 @@ class ServiceTokenTests(APITestCase):
             '/service-echo/', HTTP_AUTHORIZATION='Bearer svc_invalid'
         )
         self.assertEqual(response.status_code, 401)
+
+
+@override_settings(ROOT_URLCONF=__name__)
+class CookieJwtCsrfTests(APITestCase):
+    """Cookie-carried JWTs require Django CSRF validation on unsafe methods."""
+
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username='cookie-user', email='cookie@example.com', password='pass123'
+        )
+        self.tenant = Tenant.objects.create(
+            schema_name='cookie-tenant', name='Cookie Tenant', slug='cookie-tenant'
+        )
+        TenantUser.objects.create(
+            user=self.user,
+            tenant=self.tenant,
+            role=TenantUser.Role.TENANT_ADMIN,
+        )
+        token = AccessToken.for_user(self.user)
+        token['tenant_id'] = self.tenant.id
+        token['role'] = TenantUser.Role.TENANT_ADMIN
+        self.client = APIClient(enforce_csrf_checks=True)
+        self.client.cookies['access_token'] = str(token)
+
+    def test_safe_cookie_request_is_allowed(self):
+        response = self.client.get('/cookie-echo/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_unsafe_cookie_request_without_csrf_is_rejected(self):
+        response = self.client.post('/cookie-echo/', {}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
